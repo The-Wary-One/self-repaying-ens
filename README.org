@@ -1,0 +1,59 @@
+#+title: Self Repaying ENS Renewals
+#+author: Wary
+
+An Alchemix user can subscribe to the Self Repaying ENS Renewals service to automatically renew an expired ENS name. The renewal fee is paid by adding some self repaying debt to the user Alchemix account 🧙🪄💸. It was made for [[https://gitcoin.co/hackathon/moneylegos][Gitcoin's Money Legos Hackaton]].
+
+
+* 🌍 Overview
+
+The Self Repaying ENS Renewals is a smart contract written in Solidity that uses:
+- the [[https://alchemix.fi/][Alchemix Protocol]] to manage users self repaying debt
+- the [[https://ens.domains/][Ethereum Name System]] to manage the ENS names
+- the [[https://www.gelato.network/][Gelato Network]] to automate the smart contract actions
+
+
+* 🧐 How to use
+
+⚠ Prerequisites:
+- Register a ENS name
+- Deposit enough funds to the =alETH= AlchemistV2 contract
+
+1. Allow the =SelfRepayingENSRenewals= contract (aka SRER) to mint enough =alETH= debt to cover multiple renewals
+2. Subscribe to the =SRER= service for this name
+
+Voila ! 🥳
+That's it for the user actions.
+
+This is where the automated actions starts
+- Subscribing to the service for this name tells the =Gelato Network= to monitor regularly its expiry
+- Once it expires, =Gelato= tells =SRER= to renew it
+- To renew it, =SRER= mint enough =alETH= debt to pay for the renewal and =Gelato= fees in ETH
+
+
+* 🚚 How to install
+
+⚠ Prerequisites:
+- [[https://git-scm.com/downloads][git]]
+- [[https://book.getfoundry.sh/getting-started/installation][foundry]]
+
+Clone this repository and install the dependencies
+#+begin_src bash
+git clone git@github.com:The-Wary-One/self-repaying-ens-renewals.git
+mkdir self-repaying-ens-renewals
+forge install
+#+end_src
+
+
+* 👷 How to test
+
+The tests needs to be run in a Mainnet fork.
+Set the environment variable with your API keys
+#+begin_src bash
+cat .env.example > .env
+vim .env
+#+end_src
+
+Run the tests
+#+begin_src bash
+forge test
+#+end_src
