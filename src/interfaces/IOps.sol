@@ -4,6 +4,7 @@ pragma solidity ^0.8.16;
 
 interface IOps {
 
+    function gelato() external view returns (address payable);
     function getFeeDetails() external view returns (uint256, address);
 
     function createTask(

@@ -9,6 +9,7 @@ import { Whitelist } from "alchemix/utils/Whitelist.sol";
 import {
     SelfRepayingENSRenewals,
     IAlchemistV2,
+    AlchemicTokenV2,
     ETHRegistrarController,
     BaseRegistrarImplementation,
     IAlETHCurvePool,
@@ -26,7 +27,7 @@ contract SelfRepayingENSRenewalsTest is Test {
     IAlETHCurvePool constant alETHPool = IAlETHCurvePool(0xC4C319E2D4d66CcA4464C0c2B32c9Bd23ebe784e);
     ETHRegistrarController constant controller = ETHRegistrarController(0x283Af0B28c62C092C9727F1Ee09c02CA627EB7F5);
     BaseRegistrarImplementation constant registrar = BaseRegistrarImplementation(0x57f1887a8BF19b14fC0dF6Fd9B2acc9Af147eA85);
-    address constant gelatoOps = 0xB3f5503f93d5Ef84b06993a1975B9D21B962892F;
+    IOps constant gelatoOps = IOps(0xB3f5503f93d5Ef84b06993a1975B9D21B962892F);
 
     /* --- TEST CONFIG --- */
     SelfRepayingENSRenewals srer;
@@ -41,6 +42,10 @@ contract SelfRepayingENSRenewalsTest is Test {
         vm.createSelectFork(MAINNET_RPC_URL, MAINNET_BLOCK_NUMBER);
         require(block.chainid == 1, "Tests should be run on a mainnet fork");
 
+        // Give 100 ETH to Scoopy Trooples even if doesn't need it 🙂.
+        vm.label(scoopy, "scoopy");
+        vm.deal(scoopy, 100e18);
+
         // Deploy the SelfRepayingENSRenewals contract.
         srer = new SelfRepayingENSRenewals(
             alchemist,
@@ -50,10 +55,6 @@ contract SelfRepayingENSRenewalsTest is Test {
             registrar,
             gelatoOps
         );
-
-        // Give 100 ETH to Scoopy Trooples even if doesn't need it 🙂.
-        vm.label(scoopy, "scoopy");
-        vm.deal(scoopy, 100e18);
 
         // Add the `srer` contract address to WETHGateway's whitelist.
         {
@@ -86,7 +87,7 @@ contract SelfRepayingENSRenewalsTest is Test {
 
         // Check `name`'s rent price.
         uint256 registrationDuration = controller.MIN_REGISTRATION_DURATION();
-        uint256 rentPrice = controller.rentPrice(name, registrationDuration);
+        uint256 namePrice = controller.rentPrice(name, registrationDuration);
 
         // Register `name`.
         // To register a ENS name we must first send a commitment, wait some time then register it.
@@ -101,10 +102,10 @@ contract SelfRepayingENSRenewalsTest is Test {
         controller.commit(commitment);
         // Wait the waiting period.
         vm.warp(block.timestamp + controller.minCommitmentAge());
-        // Register `name` for `rentPrice` and `registrationDuration`.
+        // Register `name` for `namePrice` and `registrationDuration`.
         // ENS recommend sending at least a 5% premium to cover the price fluctuations. They send the leftover ETH back.
-        uint256 rentPriceWithPremium = rentPrice * 105 / 100;
-        controller.register{value: rentPriceWithPremium}(
+        uint256 namePriceWithPremium = namePrice * 105 / 100;
+        controller.register{value: namePriceWithPremium}(
             name,
             scoopy,
             registrationDuration,
@@ -130,13 +131,13 @@ contract SelfRepayingENSRenewalsTest is Test {
         // Subscribe to the Self Repaying ENS Renewals service for `name`.
         // `srer` should emit a {Subscribed} event.
         vm.expectEmit(true, true, false, false, address(srer));
-        emit Events.Subscribed(scoopy, name);
+        emit Events.Subscribed(scoopy, name, bytes32(""));
         srer.subscribe(name);
 
         vm.stopPrank();
 
         // Act as a Gelato Operator.
-        vm.startPrank(gelatoOps);
+        vm.startPrank(address(gelatoOps));
 
         // Warp to some time before `name` expiry date.
         bytes32 labelHash = keccak256(bytes(name));
@@ -145,36 +146,55 @@ contract SelfRepayingENSRenewalsTest is Test {
 
         // `srer` checker function should return false as `name` is not expired.
         {
-            (bool canExec, ) = srer.checker(name, scoopy);
-            assertFalse(canExec);
+            (bool canExec1, bytes memory execPayload1) = srer.checker(name, scoopy);
+            assertFalse(canExec1);
+            assertEq(execPayload1, bytes("SelfRepayingENSRenewals is not expired yet."));
         }
 
         // Wait for `name` to be in its grace period.
         vm.warp(expires + 1 days);
 
         // `srer` checker function should tell Gelato to execute the task by return true and the its payload.
-        {
-            (bool canExec, bytes memory execPayload) = srer.checker(name, scoopy);
-            assertTrue(canExec);
-            assertEq(execPayload, abi.encodeCall(srer.renew, (name, scoopy)));
-        }
+        (bool canExec, bytes memory execPayload) = srer.checker(name, scoopy);
+        assertTrue(canExec);
+        (
+            uint256 neededETH,
+            uint256 alETHToMint,
+            uint256 namePrice,
+            uint256 gelatoFee
+        ) = getRenewData();
+        assertEq(execPayload, abi.encodeCall(
+            srer.renew,
+            (
+                name,
+                scoopy,
+                neededETH,
+                alETHToMint,
+                namePrice,
+                gelatoFee
+            )
+        ));
 
         (int256 previousDebt, ) = alchemist.accounts(scoopy);
 
         // Gelato now execute the defined task.
-        // `srer` called by Gelato should renew `name` for `renewalDuration` for `rentPrice` by minting some alETH debt.
-        uint256 renewalDuration = srer.renewalDuration();
-        uint256 rentPrice = controller.rentPrice(name, renewalDuration);
+        // `srer` called by Gelato should renew `name` for `renewalDuration` for `namePrice` by minting some alETH debt.
         vm.expectEmit(true, true, true, true, address(controller));
-        emit NameRenewed(name, labelHash, rentPrice, expires + renewalDuration);
-        srer.renew(name, scoopy);
+        emit NameRenewed(name, labelHash, namePrice, expires + srer.renewalDuration());
+        (bool success, ) = address(srer).call(execPayload);
+        require(success);
 
         vm.stopPrank();
 
         // Check `name`'s renewal increased `scoopy`'s Alchemix debt.
         (int256 newDebt, ) = alchemist.accounts(scoopy);
-        (uint256 gelatoFee, ) = IOps(gelatoOps).getFeeDetails();
-        assertTrue(newDebt >= previousDebt + int256(rentPrice + gelatoFee));
+        assertTrue(newDebt >= previousDebt + int256(namePrice + gelatoFee));
+    }
+
+    /// @dev Test `srer` approved the `alETHPool` to transfer an (almost) unlimited amount of `alETH` tokens.
+    function testAlETHPoolIsApprovedAtDeployment() external {
+        AlchemicTokenV2 alETH = AlchemicTokenV2(alchemist.debtToken());
+        assertEq(alETH.allowance(address(srer), address(alETHPool)), type(uint256).max);
     }
 
     /// @dev Test `srer.subscribe()` reverts when inputing a ENS name that doesn't exist.
@@ -187,35 +207,56 @@ contract SelfRepayingENSRenewalsTest is Test {
         srer.subscribe("dsadsfsdfdsf");
     }
 
+    /// @dev Test `srer.renew()` reverts when the caller isn't the `GelatoOps` contract.
+    function testRenewWhenUnauthorized() external {
+        // Act as scoopy, an EOA, for the next call.
+        vm.prank(scoopy, scoopy);
+
+        // Try to renew `name` without being the GelatoOps contract.
+        (
+            uint256 neededETH,
+            uint256 alETHToMint,
+            uint256 namePrice,
+            uint256 gelatoFee
+        ) = getRenewData();
+        vm.expectRevert(SelfRepayingENSRenewals.Unauthorized.selector);
+        srer.renew(name, scoopy, neededETH, alETHToMint, namePrice, gelatoFee);
+    }
+
     /// @dev Test `srer.renew()` reverts when the user didn't give `srer` enough mint allowance.
     function testRenewWhenNotEnoughMintAllowance() external {
+        (
+            uint256 neededETH,
+            uint256 alETHToMint,
+            uint256 namePrice,
+            uint256 gelatoFee
+        ) = getRenewData();
+
         // Act as a Gelato Operator for the next call.
-        vm.prank(gelatoOps);
+        vm.prank(address(gelatoOps));
 
         // Try to renew `name` without approving `srer` to mint debt.
         vm.expectRevert(stdError.arithmeticError);
-        srer.renew(name, scoopy);
+        srer.renew(name, scoopy, neededETH, alETHToMint, namePrice, gelatoFee);
 
         // Act as Scoopy, an EOA.
         vm.startPrank(scoopy, scoopy);
 
         // Allow `srer` to mint debt but not enough to renew `name`.
-        uint256 renewalDuration = srer.renewalDuration();
-        uint256 rentPrice = controller.rentPrice(name, renewalDuration);
-        alchemist.approveMint(address(srer), rentPrice - 1);
+        alchemist.approveMint(address(srer), namePrice - 1);
 
         vm.stopPrank();
 
         // Act as a Gelato Operator for the next call.
-        vm.prank(gelatoOps);
+        vm.prank(address(gelatoOps));
 
         // Try to renew `name` without approving `srer` to mint debt.
         vm.expectRevert(stdError.arithmeticError);
-        srer.renew(name, scoopy);
+        srer.renew(name, scoopy, neededETH, alETHToMint, namePrice, gelatoFee);
     }
 
-    /// @dev Test `srer.renew()` reverts when the user don't have enough collateral to cover the `name` renewal.
-    function testRenewWhenNotEnoughCollateral() external {
+    /// @dev Test `srer.renew()` reverts when the user don't have enough available debt to cover the `name` renewal.
+    function testRenewWhenNotEnoughAvailableDebt() external {
         // Act as Scoopy, an EOA. Alchemix checks msg.sender === tx.origin to know if sender is an EOA.
         vm.startPrank(scoopy, scoopy);
 
@@ -231,11 +272,33 @@ contract SelfRepayingENSRenewalsTest is Test {
 
         vm.stopPrank();
 
+        (
+            uint256 neededETH,
+            uint256 alETHToMint,
+            uint256 namePrice,
+            uint256 gelatoFee
+        ) = getRenewData();
         // Act as a Gelato Operator for the next call.
-        vm.prank(gelatoOps);
+        vm.prank(address(gelatoOps));
 
         // Try to renew `name` without enough collateral to cover the renew cost.
         vm.expectRevert(abi.encodeWithSignature("Undercollateralized()"));
-        srer.renew(name, scoopy);
+        srer.renew(name, scoopy, neededETH, alETHToMint, namePrice, gelatoFee);
+    }
+
+    function getRenewData() internal view returns (
+        uint256 neededETH,
+        uint256 alETHToMint,
+        uint256 namePrice,
+        uint256 gelatoFee
+    ) {
+        namePrice = controller.rentPrice(name, srer.renewalDuration());
+        (gelatoFee, ) = gelatoOps.getFeeDetails();
+        neededETH = namePrice + gelatoFee;
+        alETHToMint = alETHPool.get_dy(
+            0, // ETH
+            1, // alETH
+            neededETH * 101 / 100 // 1% premium to cover slippage.
+        );
     }
 }
