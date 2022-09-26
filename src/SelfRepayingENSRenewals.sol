@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: UNLICENSED
-pragma solidity ^0.8.16;
+pragma solidity ^0.8.17;
 
-import { FixedPointMathLib } from "solmate/utils/FixedPointMathLib.sol";
 import { IAlchemistV2 } from "alchemix/interfaces/IAlchemistV2.sol";
 import { AlchemicTokenV2 } from "alchemix/AlchemicTokenV2.sol";
 import { WETHGateway } from "alchemix/WETHGateway.sol";
@@ -17,15 +16,18 @@ library Events {
     ///
     /// @param subscriber The address of the user subscribed to this service.
     /// @param name The ENS name to renew.
-    /// @param taskId The Gelato task id associated with this subscription.
-    event Subscribed(address indexed subscriber, string indexed name, bytes32 taskId);
+    event Subscribed(address indexed subscriber, string indexed name);
+
+    /// @notice An event which is emitted when a user unsubscribe to the self repaying ENS name renewal service.
+    ///
+    /// @param subscriber The address of the user unsubscribed from this service.
+    /// @param name The ENS name to not renew anymore.
+    event Unsubscribed(address indexed subscriber, string indexed name);
 }
 
 /// @title SelfRepayingENSRenewals
 /// @author Wary
 contract SelfRepayingENSRenewals {
-
-    using FixedPointMathLib for uint256;
 
     /// @notice The ENS name renewal duration in seconds.
     uint256 constant public renewalDuration = 365 days;
@@ -54,12 +56,21 @@ contract SelfRepayingENSRenewals {
     /// @notice The Gelato Ops contract.
     IOps immutable gelatoOps;
 
+    /// @notice The Gelato address for ETH.
+    address constant ETH = 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE;
+
     /// @notice An error used to indicate that an action could not be completed because of an illegal argument was passed to the function.
     error IllegalArgument();
 
     /// @notice An error used to indicate that a caller is not authorized to perform an action.
     error Unauthorized();
 
+    /// @notice An error used to indicate that a transfer failed.
+    error FailedTransfer();
+
+    /// @notice Initialize the contract.
+    ///
+    /// @dev We annotate it payable to make it cheaper. Do not send ETH.
     constructor(
             IAlchemistV2 _alchemist,
             WETHGateway _wethGateway,
@@ -67,7 +78,7 @@ contract SelfRepayingENSRenewals {
             ETHRegistrarController _controller,
             BaseRegistrarImplementation _registrar,
             IOps _ops
-    ) {
+    ) payable {
         alchemist = _alchemist;
         wethGateway = _wethGateway;
         alETHPool = _alETHPool;
@@ -84,7 +95,7 @@ contract SelfRepayingENSRenewals {
 
     /// @notice Subscribe to the self repaying ENS renewals service for `name`.
     ///
-    /// @dev It creates a Gelato task to monitor `name`'s expiry. Fees are paid on execution.
+    /// @dev It creates a Gelato task to monitor `name`'s expiry. Fees are paid on task execution.
     ///
     /// @notice `name` must exist or this call will revert an {IllegalArgument} error.
     ///
@@ -94,22 +105,44 @@ contract SelfRepayingENSRenewals {
     /// @notice **_NOTE:_** The `msg.sender` must make sure they have enough `AlchemistV2.totalValue()` to cover `name` renewal fee.
     ///
     /// @param name The ENS name to monitor and renew.
-    function subscribe(string memory name) external {
+    /// @return task The Gelato task id.
+    /// @dev We return the generated task id to simplify the `this.getTaskId()` Solidity test.
+    function subscribe(string memory name) external returns (bytes32 task) {
         // Check `name` exists.
         if (registrar.nameExpires(uint256(keccak256(bytes(name)))) == 0) {
             revert IllegalArgument();
         }
 
         // Create a gelato task to monitor `name`'s expiry and renew it.
-        bytes32 taskId = gelatoOps.createTask(
+        // We choose to pay Gelato when executing the task.
+        task = gelatoOps.createTaskNoPrepayment(
             address(this),
             this.renew.selector,
             address(this),
-            abi.encodeCall(this.checker, (name, msg.sender))
+            abi.encodeCall(this.checker, (name, msg.sender)),
+            ETH
         );
 
-        // We also log the technical Gelato task id to simplify its cancellation.
-        emit Events.Subscribed(msg.sender, name, taskId);
+        emit Events.Subscribed(msg.sender, name);
+    }
+
+    /// @notice Unsubscribe to the self repaying ENS renewals service for `name`.
+    ///
+    /// @notice Emits a {Unsubscribed} event.
+    ///
+    /// @notice **_NOTE:_** The `subscriber` (i.e. caller) can only unsubscribe from one of their renewals.
+    ///
+    /// @param name The ENS name to not monitor anymore.
+    function unsubscribe(string memory name) external {
+        // Get the Gelato task id.
+        // This way is cheaper than using a mapping from subscriber`s address to taskId but returns a random value if the caller did not subscribe for `name`.
+        // The taskId is checked by Gelato in the `cancelTask` below.
+        bytes32 taskId = getTaskId(msg.sender, name);
+
+        // Cancel the Gelato task if it exists or reverts.
+        gelatoOps.cancelTask(taskId);
+
+        emit Events.Unsubscribed(msg.sender, name);
     }
 
     /// @notice Check if `name` should be renewed.
@@ -133,12 +166,11 @@ contract SelfRepayingENSRenewals {
         // Get `name` rent price.
         uint256 namePrice = controller.rentPrice(name, renewalDuration);
         // Get the gelato fee in ETH.
-        // TODO: Should we care about the payment token if we cannot upgrade this contract ?
         (uint256 gelatoFee, ) = gelatoOps.getFeeDetails();
         // The amount of ETH needed to pay the ENS renewal using Gelato.
         uint256 neededETH = namePrice + gelatoFee;
 
-        // ⚠️ Curve alETH-ETH pool, the biggest alETH pool, makes it impossible to get an EXACT token amount back. We must over swap then deposit it back to Alchemix.
+        // FIXME: ⚠️ Curve alETH-ETH pool, the biggest alETH pool, makes it impossible to get an EXACT token amount back. We must over swap then deposit it back to Alchemix.
         // Get an estimate of the amount of debt (i.e. alETH) to mint from the Curve Pool by asking the alETH/ETH exchange rate.
         uint256 alETHToMint = alETHPool.get_dy(
             0, // ETH
@@ -155,7 +187,6 @@ contract SelfRepayingENSRenewals {
                 subscriber,
                 neededETH,
                 alETHToMint,
-                namePrice,
                 gelatoFee
             )
         );
@@ -167,16 +198,21 @@ contract SelfRepayingENSRenewals {
     ///
     /// @notice **_NOTE:_** When renewing, the `SelfRepayingENSRenewals` contract must have **mintAllowance()** to mint new alETH debt tokens on behalf of **subscriber** to cover **name** renewal and the Gelato fee costs. This can be done via the `AlchemistV2.approveMint()` method.
     ///
+    /// @dev We annotate it payable to make it cheaper. Do not send ETH.
+    ///
     /// @param name The ENS name to renew.
     /// @param subscriber The address of the subscriber.
+    /// @param neededETH The ETH minimum amount needed to pay the renewal and gelato fees.
+    /// @param alETHToMint The amount of alETH debt to mint from `subscriber`'s account.
+    /// @param gelatoFee The Gelato fee amount.
     function renew(
         string calldata name,
         address subscriber,
         uint256 neededETH,
         uint256 alETHToMint,
-        uint256 namePrice,
         uint256 gelatoFee
-    ) external {
+    ) external payable {
+        // Only the Gelato Ops contract can call this function.
         if (msg.sender != address(gelatoOps)) {
             revert Unauthorized();
         }
@@ -193,29 +229,58 @@ contract SelfRepayingENSRenewals {
         );
 
         // Pay the Gelato executor first.
-        (bool success, ) = gelato.call{value: gelatoFee}("");
-        // TODO: Use a custom error
-        require(success, "_transfer: ETH transfer failed");
-        // Renew `name` for its expiry data + `renewalDuration`.
-        controller.renew{value: namePrice}(name, renewalDuration);
-
-        // Check if `SelfRepayingENSRenewals` has some ETH left.
-        // TODO: Ideally we want to avoid this situation by only minting the perfect needed amount of alETH without premium.
-        if (address(this).balance != 0) {
-            // If it does, deposit it back to `subscriber`'s Alchemix account as **collateral** instead of repaying their debt.
-            // It is because we cannot repay it if `subscriber`'s has a credit surplus (i.e. their Alchemix debt is negative).
-            // Add this leftover ETH amount as `subscriber`'s first depositedTokens (e.g. yvETH).
-            (, address[] memory depositedTokens) = alchemist.accounts(subscriber);
-            wethGateway.depositUnderlying{value: address(this).balance}(
-                address(alchemist),
-                depositedTokens[0],
-                address(this).balance,
-                subscriber,
-                1
-            );
+        // ⚠️ Gelato is currently free to use but this is future-proof.
+        if (gelatoFee != 0) {
+            (bool success, ) = gelato.call{value: gelatoFee}("");
+            if (!success) revert FailedTransfer();
         }
+
+        // Renew `name` for its expiry data + `renewalDuration`.
+        // This function returns the ETH surplus.
+        controller.renew{value: address(this).balance}(name, renewalDuration);
+
+        // FIXME: Ideally we want to avoid this situation by only minting the perfect needed amount of alETH without premium.
+        // Deposit the remainding ETH back to `subscriber`'s Alchemix account as **collateral** instead of repaying their debt.
+        // We cannot repay a debt if `subscriber`'s has a credit surplus (i.e. their Alchemix debt is negative).
+        // Add this leftover ETH amount as `subscriber`'s first depositedTokens (e.g. yvETH).
+        (, address[] memory depositedTokens) = alchemist.accounts(subscriber);
+        wethGateway.depositUnderlying{value: address(this).balance}(
+            address(alchemist),
+            depositedTokens[0],
+            address(this).balance,
+            subscriber,
+            1
+        );
     }
 
-    /// @notice To receive ETH from alETHPool.exchange() and ETHRegistrarController.renew().
+    /// @notice Get the Self Repaying ENS task id created by `subscriber` to renew `name`.
+    ///
+    /// @dev This is a helper function to get a Gelato task id.
+    ///
+    /// @notice **_NOTE:_** This function returns a "random" value if the task does not exists. Make sure you call it with a subscribed `subscriber` for `name`.
+    ///
+    /// @param subscriber The address of the task creator (i.e. subscriber).
+    /// @param name The name to monitor and renew.
+    /// @return The task id.
+    /// @dev This is a Gelato task id.
+    function getTaskId(address subscriber, string memory name) public view returns (bytes32) {
+        bytes32 resolverHash = gelatoOps.getResolverHash(
+            address(this),
+            abi.encodeCall(this.checker, (name, subscriber))
+        );
+        return gelatoOps.getTaskId(
+            address(this),
+            address(this),
+            this.renew.selector,
+            false,
+            ETH,
+            resolverHash
+        );
+    }
+
+    /// @notice To receive ETH payments.
+    ///
+    /// @dev To receive ETH from alETHPool.exchange() and ETHRegistrarController.renew().
+    /// @dev All other received ETH will be deposited to the next renewed subscriber's account.
     receive() external payable {}
 }

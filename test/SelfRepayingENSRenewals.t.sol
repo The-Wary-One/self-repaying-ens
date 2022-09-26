@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: UNLICENSED
-pragma solidity ^0.8.16;
+pragma solidity ^0.8.17;
 
 import { Test, console2, stdError } from "forge-std/Test.sol";
 import { FixedPointMathLib } from "solmate/utils/FixedPointMathLib.sol";
@@ -121,7 +121,7 @@ contract SelfRepayingENSRenewalsTest is Test {
     /// @dev Test the happy path of the entire Alchemix + SelfRepayingENSRenewals + ENS + Gelato integration.
     ///
     /// @dev **_NOTE:_** It is pretty difficult to perfectly test complex protocols locally when they rely on bots as they usually don't give integrators test mocks.
-    /// @dev **_NOTE:_** In the following tests i won't care about Alchemix/Yearn bots and i manually simulate Gelato's.
+    /// @dev **_NOTE:_** In the following tests we won't care about Alchemix/Yearn bots and we manually simulate Gelato's.
     function testFullIntegration() external {
         // Act as scoopy, an EOA.
         vm.startPrank(scoopy, scoopy);
@@ -131,7 +131,7 @@ contract SelfRepayingENSRenewalsTest is Test {
         // Subscribe to the Self Repaying ENS Renewals service for `name`.
         // `srer` should emit a {Subscribed} event.
         vm.expectEmit(true, true, false, false, address(srer));
-        emit Events.Subscribed(scoopy, name, bytes32(""));
+        emit Events.Subscribed(scoopy, name);
         srer.subscribe(name);
 
         vm.stopPrank();
@@ -170,7 +170,6 @@ contract SelfRepayingENSRenewalsTest is Test {
                 scoopy,
                 neededETH,
                 alETHToMint,
-                namePrice,
                 gelatoFee
             )
         ));
@@ -197,6 +196,21 @@ contract SelfRepayingENSRenewalsTest is Test {
         assertEq(alETH.allowance(address(srer), address(alETHPool)), type(uint256).max);
     }
 
+    /// @dev Test `srer.subscribe()`'s happy path.
+    function testSubscribe() public {
+        // Act as scoopy, an EOA.
+        vm.prank(scoopy, scoopy);
+
+        // Subscribe to the Self Repaying ENS Renewals service for `name`.
+        // `srer` should emit a {Subscribed} event.
+        vm.expectEmit(true, true, false, false, address(srer));
+        emit Events.Subscribed(scoopy, name);
+        bytes32 task = srer.subscribe(name);
+
+        // `srer.getTaskId()` should return the same task id.
+        assertEq(srer.getTaskId(scoopy, name), task);
+    }
+
     /// @dev Test `srer.subscribe()` reverts when inputing a ENS name that doesn't exist.
     function testSubscribeWhenNameDoesNotExist() external {
         // Act as scoopy, an EOA, for the next call.
@@ -205,6 +219,86 @@ contract SelfRepayingENSRenewalsTest is Test {
         // Try to subscribe with a ENS name that doesn't exists.
         vm.expectRevert(SelfRepayingENSRenewals.IllegalArgument.selector);
         srer.subscribe("dsadsfsdfdsf");
+    }
+
+    /// @dev Test `srer.subscribe()` reverts when subscribing twice with the same subscriber.
+    function testSubscribeTwiceWithTheSameSubscriber() external {
+        // Subscribe once as `scoopy` for `name`.
+        testSubscribe();
+
+        // Act as scoopy, an EOA, for the next call.
+        vm.prank(scoopy, scoopy);
+
+        // Try to subscribe a second time as `scoopy`.
+        vm.expectRevert("Ops: createTask: Sender already started task"); // from GelatoOps.
+        srer.subscribe(name);
+    }
+
+    /// @dev Test `srer.subscribe()` reverts when subscribing `name` with another subscriber.
+    function testSubscribeTwiceWithAnotherSubscriber() external {
+        // Subscribe once as `scoopy` for `name`.
+        testSubscribe();
+
+        // Act as another, an EOA, for the next call.
+        vm.prank(address(0x1), address(0x1));
+
+        // Subscribe to the Self Repaying ENS Renewals service for `name`.
+        // `srer` should emit a {Subscribed} event.
+        vm.expectEmit(true, true, false, false, address(srer));
+        emit Events.Subscribed(address(0x1), name);
+        srer.subscribe(name);
+    }
+
+    /// @dev Test `srer.unsubscribe()`'s happy path.
+    function testUnsubscribe() external {
+        // Subscribe once as `scoopy` for `name`.
+        testSubscribe();
+
+        vm.prank(scoopy, scoopy);
+
+        // Unsubscribe to the Self Repaying ENS Renewals service for `name`.
+        // `srer` should emit a {Unubscribed} event.
+        vm.expectEmit(true, true, false, false, address(srer));
+        emit Events.Unsubscribed(scoopy, name);
+        srer.unsubscribe(name);
+    }
+
+    /// @dev Test `srer.unsubscribe()` reverts when `subscriber` did not subscribe to renew `name`.
+    function testUnsubscribeWhenSubscriberDidNotSubscribe() external {
+        // Act as scoopy, an EOA, for the next call.
+        vm.prank(scoopy, scoopy);
+
+        // Try to subscribe with a ENS name that doesn't exists.
+        vm.expectRevert("Ops: cancelTask: Sender did not start task yet"); // from Gelato Ops.
+        srer.unsubscribe("dsadsfsdfdsf");
+    }
+
+    /// @dev Test `srer.checker()`'s happy path.
+    function testChecker() external {
+        // Warp to some time after `name` expiry date.
+        bytes32 labelHash = keccak256(bytes(name));
+        uint256 expires = registrar.nameExpires(uint256(labelHash));
+        vm.warp(expires + 1 days);
+
+        // `srer` checker function should return true as `name` is expired.
+        (bool canExec, bytes memory execPayload) = srer.checker(name, scoopy);
+        assertTrue(canExec);
+        (
+            uint256 neededETH,
+            uint256 alETHToMint,
+            uint256 namePrice,
+            uint256 gelatoFee
+        ) = getRenewData();
+        assertEq(execPayload, abi.encodeCall(
+            srer.renew,
+            (
+                name,
+                scoopy,
+                neededETH,
+                alETHToMint,
+                gelatoFee
+            )
+        ));
     }
 
     /// @dev Test `srer.renew()` reverts when the caller isn't the `GelatoOps` contract.
@@ -216,11 +310,11 @@ contract SelfRepayingENSRenewalsTest is Test {
         (
             uint256 neededETH,
             uint256 alETHToMint,
-            uint256 namePrice,
+            ,
             uint256 gelatoFee
         ) = getRenewData();
         vm.expectRevert(SelfRepayingENSRenewals.Unauthorized.selector);
-        srer.renew(name, scoopy, neededETH, alETHToMint, namePrice, gelatoFee);
+        srer.renew(name, scoopy, neededETH, alETHToMint, gelatoFee);
     }
 
     /// @dev Test `srer.renew()` reverts when the user didn't give `srer` enough mint allowance.
@@ -237,7 +331,7 @@ contract SelfRepayingENSRenewalsTest is Test {
 
         // Try to renew `name` without approving `srer` to mint debt.
         vm.expectRevert(stdError.arithmeticError);
-        srer.renew(name, scoopy, neededETH, alETHToMint, namePrice, gelatoFee);
+        srer.renew(name, scoopy, neededETH, alETHToMint, gelatoFee);
 
         // Act as Scoopy, an EOA.
         vm.startPrank(scoopy, scoopy);
@@ -252,7 +346,7 @@ contract SelfRepayingENSRenewalsTest is Test {
 
         // Try to renew `name` without approving `srer` to mint debt.
         vm.expectRevert(stdError.arithmeticError);
-        srer.renew(name, scoopy, neededETH, alETHToMint, namePrice, gelatoFee);
+        srer.renew(name, scoopy, neededETH, alETHToMint, gelatoFee);
     }
 
     /// @dev Test `srer.renew()` reverts when the user don't have enough available debt to cover the `name` renewal.
@@ -275,7 +369,7 @@ contract SelfRepayingENSRenewalsTest is Test {
         (
             uint256 neededETH,
             uint256 alETHToMint,
-            uint256 namePrice,
+            ,
             uint256 gelatoFee
         ) = getRenewData();
         // Act as a Gelato Operator for the next call.
@@ -283,7 +377,7 @@ contract SelfRepayingENSRenewalsTest is Test {
 
         // Try to renew `name` without enough collateral to cover the renew cost.
         vm.expectRevert(abi.encodeWithSignature("Undercollateralized()"));
-        srer.renew(name, scoopy, neededETH, alETHToMint, namePrice, gelatoFee);
+        srer.renew(name, scoopy, neededETH, alETHToMint, gelatoFee);
     }
 
     function getRenewData() internal view returns (
