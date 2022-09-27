@@ -3,7 +3,7 @@
 pragma solidity ^0.8.17;
 
 /// @dev Gelato Ops interface duplication to compile in a newer Solidity version.
-interface IOps {
+interface IGelatoOps {
 
     function gelato() external view returns (address payable);
     function getFeeDetails() external view returns (uint256, address);

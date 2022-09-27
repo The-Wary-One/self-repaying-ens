@@ -7,15 +7,17 @@ import { FixedPointMathLib } from "solmate/utils/FixedPointMathLib.sol";
 import { WETHGateway } from "alchemix/WETHGateway.sol";
 import { Whitelist } from "alchemix/utils/Whitelist.sol";
 import {
+    SelfRepayingENSRenewalsStub,
     SelfRepayingENSRenewals,
     IAlchemistV2,
     AlchemicTokenV2,
     ETHRegistrarController,
     BaseRegistrarImplementation,
-    IAlETHCurvePool,
-    IOps,
+    ICurveAlETHPool,
+    ICurveCalc,
+    IGelatoOps,
     Events
-} from "src/SelfRepayingENSRenewals.sol";
+} from "./stubs/SelfRepayingENSRenewals.sol";
 
 contract SelfRepayingENSRenewalsTest is Test {
 
@@ -24,13 +26,14 @@ contract SelfRepayingENSRenewalsTest is Test {
     /* --- MAINNET CONFIG --- */
     WETHGateway constant wethGateway = WETHGateway(payable(0xA22a7ec2d82A471B1DAcC4B37345Cf428E76D67A));
     IAlchemistV2 constant alchemist = IAlchemistV2(0x062Bf725dC4cDF947aa79Ca2aaCCD4F385b13b5c); // AlETH alchemist
-    IAlETHCurvePool constant alETHPool = IAlETHCurvePool(0xC4C319E2D4d66CcA4464C0c2B32c9Bd23ebe784e);
+    ICurveAlETHPool constant alETHPool = ICurveAlETHPool(0xC4C319E2D4d66CcA4464C0c2B32c9Bd23ebe784e);
+    ICurveCalc constant curveCalc = ICurveCalc(0xc1DB00a8E5Ef7bfa476395cdbcc98235477cDE4E);
     ETHRegistrarController constant controller = ETHRegistrarController(0x283Af0B28c62C092C9727F1Ee09c02CA627EB7F5);
     BaseRegistrarImplementation constant registrar = BaseRegistrarImplementation(0x57f1887a8BF19b14fC0dF6Fd9B2acc9Af147eA85);
-    IOps constant gelatoOps = IOps(0xB3f5503f93d5Ef84b06993a1975B9D21B962892F);
+    IGelatoOps constant gelatoOps = IGelatoOps(0xB3f5503f93d5Ef84b06993a1975B9D21B962892F);
 
     /* --- TEST CONFIG --- */
-    SelfRepayingENSRenewals srer;
+    SelfRepayingENSRenewalsStub srer;
     address scoopy = address(0xbadbabe);
     string name = "SelfRepayingENSRenewals";
 
@@ -47,10 +50,11 @@ contract SelfRepayingENSRenewalsTest is Test {
         vm.deal(scoopy, 100e18);
 
         // Deploy the SelfRepayingENSRenewals contract.
-        srer = new SelfRepayingENSRenewals(
+        srer = new SelfRepayingENSRenewalsStub(
             alchemist,
             wethGateway,
             alETHPool,
+            curveCalc,
             controller,
             registrar,
             gelatoOps
@@ -169,8 +173,7 @@ contract SelfRepayingENSRenewalsTest is Test {
                 name,
                 scoopy,
                 neededETH,
-                alETHToMint,
-                gelatoFee
+                alETHToMint
             )
         ));
 
@@ -275,19 +278,28 @@ contract SelfRepayingENSRenewalsTest is Test {
 
     /// @dev Test `srer.checker()`'s happy path.
     function testChecker() external {
-        // Warp to some time after `name` expiry date.
+        // Warp to some time before `name` expiry date.
         bytes32 labelHash = keccak256(bytes(name));
         uint256 expires = registrar.nameExpires(uint256(labelHash));
+        vm.warp(expires - 1 days);
+
+        // `srer` checker function should return false as `name` is not expired.
+        {
+            (bool canExec1, bytes memory execPayload1) = srer.checker(name, scoopy);
+            assertFalse(canExec1);
+            assertEq(execPayload1, bytes("SelfRepayingENSRenewals is not expired yet."));
+        }
+
+        // Wait for `name` to be in its grace period.
         vm.warp(expires + 1 days);
 
-        // `srer` checker function should return true as `name` is expired.
+        // `srer` checker function should tell Gelato to execute the task by return true and the its payload.
         (bool canExec, bytes memory execPayload) = srer.checker(name, scoopy);
         assertTrue(canExec);
         (
             uint256 neededETH,
             uint256 alETHToMint,
-            uint256 namePrice,
-            uint256 gelatoFee
+            ,
         ) = getRenewData();
         assertEq(execPayload, abi.encodeCall(
             srer.renew,
@@ -295,8 +307,7 @@ contract SelfRepayingENSRenewalsTest is Test {
                 name,
                 scoopy,
                 neededETH,
-                alETHToMint,
-                gelatoFee
+                alETHToMint
             )
         ));
     }
@@ -311,10 +322,9 @@ contract SelfRepayingENSRenewalsTest is Test {
             uint256 neededETH,
             uint256 alETHToMint,
             ,
-            uint256 gelatoFee
         ) = getRenewData();
         vm.expectRevert(SelfRepayingENSRenewals.Unauthorized.selector);
-        srer.renew(name, scoopy, neededETH, alETHToMint, gelatoFee);
+        srer.renew(name, scoopy, neededETH, alETHToMint);
     }
 
     /// @dev Test `srer.renew()` reverts when the user didn't give `srer` enough mint allowance.
@@ -323,7 +333,6 @@ contract SelfRepayingENSRenewalsTest is Test {
             uint256 neededETH,
             uint256 alETHToMint,
             uint256 namePrice,
-            uint256 gelatoFee
         ) = getRenewData();
 
         // Act as a Gelato Operator for the next call.
@@ -331,7 +340,7 @@ contract SelfRepayingENSRenewalsTest is Test {
 
         // Try to renew `name` without approving `srer` to mint debt.
         vm.expectRevert(stdError.arithmeticError);
-        srer.renew(name, scoopy, neededETH, alETHToMint, gelatoFee);
+        srer.renew(name, scoopy, neededETH, alETHToMint);
 
         // Act as Scoopy, an EOA.
         vm.startPrank(scoopy, scoopy);
@@ -346,7 +355,7 @@ contract SelfRepayingENSRenewalsTest is Test {
 
         // Try to renew `name` without approving `srer` to mint debt.
         vm.expectRevert(stdError.arithmeticError);
-        srer.renew(name, scoopy, neededETH, alETHToMint, gelatoFee);
+        srer.renew(name, scoopy, neededETH, alETHToMint);
     }
 
     /// @dev Test `srer.renew()` reverts when the user don't have enough available debt to cover the `name` renewal.
@@ -370,14 +379,13 @@ contract SelfRepayingENSRenewalsTest is Test {
             uint256 neededETH,
             uint256 alETHToMint,
             ,
-            uint256 gelatoFee
         ) = getRenewData();
         // Act as a Gelato Operator for the next call.
         vm.prank(address(gelatoOps));
 
         // Try to renew `name` without enough collateral to cover the renew cost.
         vm.expectRevert(abi.encodeWithSignature("Undercollateralized()"));
-        srer.renew(name, scoopy, neededETH, alETHToMint, gelatoFee);
+        srer.renew(name, scoopy, neededETH, alETHToMint);
     }
 
     function getRenewData() internal view returns (
@@ -389,10 +397,6 @@ contract SelfRepayingENSRenewalsTest is Test {
         namePrice = controller.rentPrice(name, srer.renewalDuration());
         (gelatoFee, ) = gelatoOps.getFeeDetails();
         neededETH = namePrice + gelatoFee;
-        alETHToMint = alETHPool.get_dy(
-            0, // ETH
-            1, // alETH
-            neededETH * 101 / 100 // 1% premium to cover slippage.
-        );
+        alETHToMint = srer.publicGetAlETHToMint(neededETH);
     }
 }

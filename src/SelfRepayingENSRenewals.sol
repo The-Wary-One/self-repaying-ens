@@ -6,8 +6,9 @@ import { AlchemicTokenV2 } from "alchemix/AlchemicTokenV2.sol";
 import { WETHGateway } from "alchemix/WETHGateway.sol";
 import { ETHRegistrarController, BaseRegistrarImplementation } from "ens/ethregistrar/ETHRegistrarController.sol";
 
-import { IAlETHCurvePool } from "./interfaces/IAlETHCurvePool.sol";
-import { IOps } from "./interfaces/IOps.sol";
+import { ICurveAlETHPool } from "./interfaces/ICurveAlETHPool.sol";
+import { ICurveCalc } from "./interfaces/ICurveCalc.sol";
+import { IGelatoOps } from "./interfaces/IGelatoOps.sol";
 
 // We put the event in this external library to reuse them in our tests.
 library Events {
@@ -42,7 +43,10 @@ contract SelfRepayingENSRenewals {
     AlchemicTokenV2 immutable alETH;
 
     /// @notice The alETH + ETH Curve Pool contract.
-    IAlETHCurvePool immutable alETHPool;
+    ICurveAlETHPool immutable alETHPool;
+
+    /// @notice The CurveCalc contract.
+    ICurveCalc immutable curveCalc;
 
     /// @notice The ENS ETHRegistrarController (i.e. .eth controller) contract.
     ETHRegistrarController immutable controller;
@@ -54,7 +58,7 @@ contract SelfRepayingENSRenewals {
     address payable public immutable gelato;
 
     /// @notice The Gelato Ops contract.
-    IOps immutable gelatoOps;
+    IGelatoOps immutable gelatoOps;
 
     /// @notice The Gelato address for ETH.
     address constant ETH = 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE;
@@ -74,20 +78,22 @@ contract SelfRepayingENSRenewals {
     constructor(
             IAlchemistV2 _alchemist,
             WETHGateway _wethGateway,
-            IAlETHCurvePool _alETHPool,
+            ICurveAlETHPool _alETHPool,
+            ICurveCalc _curveCalc,
             ETHRegistrarController _controller,
             BaseRegistrarImplementation _registrar,
-            IOps _ops
+            IGelatoOps _gelatoOps
     ) payable {
         alchemist = _alchemist;
         wethGateway = _wethGateway;
         alETHPool = _alETHPool;
+        curveCalc = _curveCalc;
         controller = _controller;
         registrar = _registrar;
-        gelatoOps = _ops;
+        gelatoOps = _gelatoOps;
 
         alETH = AlchemicTokenV2(alchemist.debtToken());
-        gelato = _ops.gelato();
+        gelato = _gelatoOps.gelato();
 
         // Approve the `alETHPool` Curve Pool to transfer an (almost) unlimited amount of `alETH` tokens.
         alETH.approve(address(_alETHPool), type(uint256).max);
@@ -170,13 +176,9 @@ contract SelfRepayingENSRenewals {
         // The amount of ETH needed to pay the ENS renewal using Gelato.
         uint256 neededETH = namePrice + gelatoFee;
 
-        // FIXME: ⚠️ Curve alETH-ETH pool, the biggest alETH pool, makes it impossible to get an EXACT token amount back. We must over swap then deposit it back to Alchemix.
-        // Get an estimate of the amount of debt (i.e. alETH) to mint from the Curve Pool by asking the alETH/ETH exchange rate.
-        uint256 alETHToMint = alETHPool.get_dy(
-            0, // ETH
-            1, // alETH
-            neededETH * 101 / 100 // TODO: is 1% enough ? What happen when alETH depegs more ?
-        );
+        // ⚠️ Curve alETH-ETH pool, the biggest alETH pool, makes it difficult and expensive to get an EXACT ETH amount back so we must use `curveCalc.get_dx()` outside of a transaction.
+        // Get an estimate of the amount of debt (i.e. alETH) to mint from the Curve Pool by asking the CurveCalc contract.
+        uint256 alETHToMint = _getAlETHToMint(neededETH);
 
         // Return the Gelato task payload to execute. It must call `this.renew(name, subscriber)`.
         canExec = true;
@@ -186,8 +188,7 @@ contract SelfRepayingENSRenewals {
                 name,
                 subscriber,
                 neededETH,
-                alETHToMint,
-                gelatoFee
+                alETHToMint
             )
         );
     }
@@ -204,13 +205,11 @@ contract SelfRepayingENSRenewals {
     /// @param subscriber The address of the subscriber.
     /// @param neededETH The ETH minimum amount needed to pay the renewal and gelato fees.
     /// @param alETHToMint The amount of alETH debt to mint from `subscriber`'s account.
-    /// @param gelatoFee The Gelato fee amount.
     function renew(
         string calldata name,
         address subscriber,
         uint256 neededETH,
-        uint256 alETHToMint,
-        uint256 gelatoFee
+        uint256 alETHToMint
     ) external payable {
         // Only the Gelato Ops contract can call this function.
         if (msg.sender != address(gelatoOps)) {
@@ -228,29 +227,16 @@ contract SelfRepayingENSRenewals {
             neededETH
         );
 
-        // Pay the Gelato executor first.
-        // ⚠️ Gelato is currently free to use but this is future-proof.
-        if (gelatoFee != 0) {
-            (bool success, ) = gelato.call{value: gelatoFee}("");
-            if (!success) revert FailedTransfer();
-        }
-
-        // Renew `name` for its expiry data + `renewalDuration`.
+        // Renew `name` for its expiry data + `renewalDuration` first.
         // This function returns the ETH surplus.
         controller.renew{value: address(this).balance}(name, renewalDuration);
 
-        // FIXME: Ideally we want to avoid this situation by only minting the perfect needed amount of alETH without premium.
-        // Deposit the remainding ETH back to `subscriber`'s Alchemix account as **collateral** instead of repaying their debt.
-        // We cannot repay a debt if `subscriber`'s has a credit surplus (i.e. their Alchemix debt is negative).
-        // Add this leftover ETH amount as `subscriber`'s first depositedTokens (e.g. yvETH).
-        (, address[] memory depositedTokens) = alchemist.accounts(subscriber);
-        wethGateway.depositUnderlying{value: address(this).balance}(
-            address(alchemist),
-            depositedTokens[0],
-            address(this).balance,
-            subscriber,
-            1
-        );
+        // Pay the Gelato executor with all the ETH left. No ETH will be stuck in this contract.
+        // ⚠️ Gelato is currently free to use but this is future-proof.
+        if (address(this).balance != 0) {
+            (bool success, ) = gelato.call{value: address(this).balance}("");
+            if (!success) revert FailedTransfer();
+        }
     }
 
     /// @notice Get the Self Repaying ENS task id created by `subscriber` to renew `name`.
@@ -278,9 +264,26 @@ contract SelfRepayingENSRenewals {
         );
     }
 
+    /// @dev Get the current alETH amount to get `neededETH` ETH amount back in from a Curve Pool exchange.
+    function _getAlETHToMint(uint256 neededETH) internal view returns (uint256) {
+        uint256[2] memory b = alETHPool.get_balances();
+        return curveCalc.get_dx(
+            2,
+            [b[0], b[1], 0, 0, 0, 0, 0, 0],
+            alETHPool.A(),
+            alETHPool.fee(),
+            [uint256(1e18), 1e18, 0, 0, 0, 0, 0, 0],
+            [uint256(1), 1, 0, 0, 0, 0, 0, 0],
+            false,
+            1, // alETH
+            0, // ETH
+            neededETH + 1 // Because of Curve rounding errors
+        );
+    }
+
     /// @notice To receive ETH payments.
     ///
     /// @dev To receive ETH from alETHPool.exchange() and ETHRegistrarController.renew().
-    /// @dev All other received ETH will be deposited to the next renewed subscriber's account.
+    /// @dev All other received ETH will be sent to the next Gelato executor.
     receive() external payable {}
 }
