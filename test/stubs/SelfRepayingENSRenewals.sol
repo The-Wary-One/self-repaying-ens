@@ -24,6 +24,8 @@ contract SelfRepayingENSRenewalsStub is SelfRepayingENSRenewals {
             _gelatoOps
     ) {}
 
+    /* --- EXPOSED INTERNAL FUNCTIONS --- */
+
     function publicGetAlETHToMint(uint256 neededETH) public view returns (uint256) {
         return _getAlETHToMint(neededETH);
     }

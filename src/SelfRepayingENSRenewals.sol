@@ -169,27 +169,12 @@ contract SelfRepayingENSRenewals {
             return (false, bytes(string.concat(name, " is not expired yet.")));
         }
         // `name` is expired.
-        // Get `name` rent price.
-        uint256 namePrice = controller.rentPrice(name, renewalDuration);
-        // Get the gelato fee in ETH.
-        (uint256 gelatoFee, ) = gelatoOps.getFeeDetails();
-        // The amount of ETH needed to pay the ENS renewal using Gelato.
-        uint256 neededETH = namePrice + gelatoFee;
-
-        // ⚠️ Curve alETH-ETH pool, the biggest alETH pool, makes it difficult and expensive to get an EXACT ETH amount back so we must use `curveCalc.get_dx()` outside of a transaction.
-        // Get an estimate of the amount of debt (i.e. alETH) to mint from the Curve Pool by asking the CurveCalc contract.
-        uint256 alETHToMint = _getAlETHToMint(neededETH);
 
         // Return the Gelato task payload to execute. It must call `this.renew(name, subscriber)`.
         canExec = true;
         execPayload = abi.encodeCall(
             this.renew,
-            (
-                name,
-                subscriber,
-                neededETH,
-                alETHToMint
-            )
+            (name, subscriber)
         );
     }
 
@@ -203,21 +188,24 @@ contract SelfRepayingENSRenewals {
     ///
     /// @param name The ENS name to renew.
     /// @param subscriber The address of the subscriber.
-    /// @param neededETH The ETH minimum amount needed to pay the renewal and gelato fees.
-    /// @param alETHToMint The amount of alETH debt to mint from `subscriber`'s account.
-    function renew(
-        string calldata name,
-        address subscriber,
-        uint256 neededETH,
-        uint256 alETHToMint
-    ) external payable {
+    function renew(string calldata name, address subscriber) external payable {
         // Only the Gelato Ops contract can call this function.
         if (msg.sender != address(gelatoOps)) {
             revert Unauthorized();
         }
 
+        // Get `name` rent price.
+        uint256 namePrice = controller.rentPrice(name, renewalDuration);
+        // Get the gelato fee in ETH.
+        (uint256 gelatoFee, ) = gelatoOps.getFeeDetails();
+        // The amount of ETH needed to pay the ENS renewal using Gelato.
+        uint256 neededETH = namePrice + gelatoFee;
+
+        // ⚠️ Curve alETH-ETH pool, the biggest alETH pool, makes it difficult and expensive to get an EXACT ETH amount back so we must use `curveCalc.get_dx()` outside of a transaction.
+        // Get the EXACT amount of debt (i.e. alETH) to mint from the Curve Pool by asking the CurveCalc contract.
+        uint256 alETHToMint = _getAlETHToMint(neededETH);
+
         // Mint `alETHToMint` of alETH (i.e. debt token) from `subscriber`'s Alchemix account.
-        // TODO: Withdraw collateral if there isn't enough available debt.
         alchemist.mintFrom(subscriber, alETHToMint, address(this));
         // Execute a Curve Pool exchange for `alETHToMint` amount of alETH tokens to at least `needETH` ETH.
         alETHPool.exchange(
@@ -232,11 +220,8 @@ contract SelfRepayingENSRenewals {
         controller.renew{value: address(this).balance}(name, renewalDuration);
 
         // Pay the Gelato executor with all the ETH left. No ETH will be stuck in this contract.
-        // ⚠️ Gelato is currently free to use but this is future-proof.
-        if (address(this).balance != 0) {
-            (bool success, ) = gelato.call{value: address(this).balance}("");
-            if (!success) revert FailedTransfer();
-        }
+        (bool success, ) = gelato.call{value: address(this).balance}("");
+        if (!success) revert FailedTransfer();
     }
 
     /// @notice Get the Self Repaying ENS task id created by `subscriber` to renew `name`.
@@ -250,18 +235,21 @@ contract SelfRepayingENSRenewals {
     /// @return The task id.
     /// @dev This is a Gelato task id.
     function getTaskId(address subscriber, string memory name) public view returns (bytes32) {
-        bytes32 resolverHash = gelatoOps.getResolverHash(
+        // The Gelato Ops getTaskId function is deprecated so we need to compute it ourselves.
+        // https://github.com/gelatodigital/ops/blob/66095337ef1d2f107e68a3c2c91d7302ceccb33a/contracts/Ops.sol#L329
+        bytes32 resolverHash = keccak256(abi.encode(
             address(this),
             abi.encodeCall(this.checker, (name, subscriber))
-        );
-        return gelatoOps.getTaskId(
+        ));
+        // https://github.com/gelatodigital/ops/blob/66095337ef1d2f107e68a3c2c91d7302ceccb33a/contracts/Ops.sol#L348
+        return keccak256(abi.encode(
             address(this),
             address(this),
             this.renew.selector,
             false,
             ETH,
             resolverHash
-        );
+        ));
     }
 
     /// @dev Get the current alETH amount to get `neededETH` ETH amount back in from a Curve Pool exchange.

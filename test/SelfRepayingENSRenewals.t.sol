@@ -31,6 +31,9 @@ contract SelfRepayingENSRenewalsTest is Test {
     ETHRegistrarController constant controller = ETHRegistrarController(0x283Af0B28c62C092C9727F1Ee09c02CA627EB7F5);
     BaseRegistrarImplementation constant registrar = BaseRegistrarImplementation(0x57f1887a8BF19b14fC0dF6Fd9B2acc9Af147eA85);
     IGelatoOps constant gelatoOps = IGelatoOps(0xB3f5503f93d5Ef84b06993a1975B9D21B962892F);
+    address constant gelato = 0x3CACa7b48D0573D793d3b0279b5F0029180E83b6;
+    address constant ETH = 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE;
+    uint256 constant gelatoFee = 0.001 ether;
 
     /* --- TEST CONFIG --- */
     SelfRepayingENSRenewalsStub srer;
@@ -140,9 +143,6 @@ contract SelfRepayingENSRenewalsTest is Test {
 
         vm.stopPrank();
 
-        // Act as a Gelato Operator.
-        vm.startPrank(address(gelatoOps));
-
         // Warp to some time before `name` expiry date.
         bytes32 labelHash = keccak256(bytes(name));
         uint256 expires = registrar.nameExpires(uint256(labelHash));
@@ -161,32 +161,19 @@ contract SelfRepayingENSRenewalsTest is Test {
         // `srer` checker function should tell Gelato to execute the task by return true and the its payload.
         (bool canExec, bytes memory execPayload) = srer.checker(name, scoopy);
         assertTrue(canExec);
-        (
-            uint256 neededETH,
-            uint256 alETHToMint,
-            uint256 namePrice,
-            uint256 gelatoFee
-        ) = getRenewData();
         assertEq(execPayload, abi.encodeCall(
             srer.renew,
-            (
-                name,
-                scoopy,
-                neededETH,
-                alETHToMint
-            )
+            (name, scoopy)
         ));
 
         (int256 previousDebt, ) = alchemist.accounts(scoopy);
+        uint256 namePrice = controller.rentPrice(name, srer.renewalDuration());
 
         // Gelato now execute the defined task.
         // `srer` called by Gelato should renew `name` for `renewalDuration` for `namePrice` by minting some alETH debt.
         vm.expectEmit(true, true, true, true, address(controller));
         emit NameRenewed(name, labelHash, namePrice, expires + srer.renewalDuration());
-        (bool success, ) = address(srer).call(execPayload);
-        require(success);
-
-        vm.stopPrank();
+        execRenewTask(gelatoFee, name, scoopy);
 
         // Check `name`'s renewal increased `scoopy`'s Alchemix debt.
         (int256 newDebt, ) = alchemist.accounts(scoopy);
@@ -296,19 +283,9 @@ contract SelfRepayingENSRenewalsTest is Test {
         // `srer` checker function should tell Gelato to execute the task by return true and the its payload.
         (bool canExec, bytes memory execPayload) = srer.checker(name, scoopy);
         assertTrue(canExec);
-        (
-            uint256 neededETH,
-            uint256 alETHToMint,
-            ,
-        ) = getRenewData();
         assertEq(execPayload, abi.encodeCall(
             srer.renew,
-            (
-                name,
-                scoopy,
-                neededETH,
-                alETHToMint
-            )
+            (name, scoopy)
         ));
     }
 
@@ -318,44 +295,31 @@ contract SelfRepayingENSRenewalsTest is Test {
         vm.prank(scoopy, scoopy);
 
         // Try to renew `name` without being the GelatoOps contract.
-        (
-            uint256 neededETH,
-            uint256 alETHToMint,
-            ,
-        ) = getRenewData();
         vm.expectRevert(SelfRepayingENSRenewals.Unauthorized.selector);
-        srer.renew(name, scoopy, neededETH, alETHToMint);
+        srer.renew(name, scoopy);
     }
 
     /// @dev Test `srer.renew()` reverts when the user didn't give `srer` enough mint allowance.
     function testRenewWhenNotEnoughMintAllowance() external {
-        (
-            uint256 neededETH,
-            uint256 alETHToMint,
-            uint256 namePrice,
-        ) = getRenewData();
-
-        // Act as a Gelato Operator for the next call.
+        // Act as a Gelato Ops
         vm.prank(address(gelatoOps));
 
         // Try to renew `name` without approving `srer` to mint debt.
         vm.expectRevert(stdError.arithmeticError);
-        srer.renew(name, scoopy, neededETH, alETHToMint);
+        srer.renew(name, scoopy);
 
         // Act as Scoopy, an EOA.
-        vm.startPrank(scoopy, scoopy);
+        vm.prank(scoopy, scoopy);
 
         // Allow `srer` to mint debt but not enough to renew `name`.
-        alchemist.approveMint(address(srer), namePrice - 1);
+        alchemist.approveMint(address(srer), 1);
 
-        vm.stopPrank();
-
-        // Act as a Gelato Operator for the next call.
+        // Act as a Gelato Ops
         vm.prank(address(gelatoOps));
 
         // Try to renew `name` without approving `srer` to mint debt.
         vm.expectRevert(stdError.arithmeticError);
-        srer.renew(name, scoopy, neededETH, alETHToMint);
+        srer.renew(name, scoopy);
     }
 
     /// @dev Test `srer.renew()` reverts when the user don't have enough available debt to cover the `name` renewal.
@@ -375,28 +339,36 @@ contract SelfRepayingENSRenewalsTest is Test {
 
         vm.stopPrank();
 
-        (
-            uint256 neededETH,
-            uint256 alETHToMint,
-            ,
-        ) = getRenewData();
         // Act as a Gelato Operator for the next call.
         vm.prank(address(gelatoOps));
 
         // Try to renew `name` without enough collateral to cover the renew cost.
         vm.expectRevert(abi.encodeWithSignature("Undercollateralized()"));
-        srer.renew(name, scoopy, neededETH, alETHToMint);
+        srer.renew(name, scoopy);
     }
 
-    function getRenewData() internal view returns (
-        uint256 neededETH,
-        uint256 alETHToMint,
-        uint256 namePrice,
-        uint256 gelatoFee
-    ) {
-        namePrice = controller.rentPrice(name, srer.renewalDuration());
-        (gelatoFee, ) = gelatoOps.getFeeDetails();
-        neededETH = namePrice + gelatoFee;
-        alETHToMint = srer.publicGetAlETHToMint(neededETH);
+    /// @dev Simulate a Gelato Ops call with fees.
+    function execRenewTask(uint256 fee, string memory _name, address subscriber) internal {
+        // Act as the Gelato main contract.
+        vm.prank(gelato);
+
+        // Execute the renew Gelato Task for `fee`.
+        bytes32 resolverHash = keccak256(abi.encode(
+            address(srer),
+            abi.encodeCall(srer.checker, (name, subscriber))
+        ));
+        gelatoOps.exec(
+            fee,
+            ETH,
+            address(srer),
+            false,
+            true,
+            resolverHash,
+            address(srer),
+            abi.encodeCall(
+                srer.renew,
+                (_name, subscriber)
+            )
+        );
     }
 }
