@@ -3,7 +3,6 @@ pragma solidity ^0.8.17;
 
 import { Test, console2, stdError } from "forge-std/Test.sol";
 import { FixedPointMathLib } from "solmate/utils/FixedPointMathLib.sol";
-
 import { WETHGateway } from "alchemix/WETHGateway.sol";
 import { Whitelist } from "alchemix/utils/Whitelist.sol";
 import {
@@ -48,14 +47,13 @@ contract SelfRepayingENSRenewalsTest is Test {
         vm.createSelectFork(MAINNET_RPC_URL, MAINNET_BLOCK_NUMBER);
         require(block.chainid == 1, "Tests should be run on a mainnet fork");
 
-        // Give 100 ETH to Scoopy Trooples even if doesn't need it 🙂.
+        // Give 100 ETH to Scoopy Trooples even if he doesn't need it 🙂.
         vm.label(scoopy, "scoopy");
         vm.deal(scoopy, 100e18);
 
         // Deploy the SelfRepayingENSRenewals contract.
         srer = new SelfRepayingENSRenewalsStub(
             alchemist,
-            wethGateway,
             alETHPool,
             curveCalc,
             controller,
@@ -63,20 +61,11 @@ contract SelfRepayingENSRenewalsTest is Test {
             gelatoOps
         );
 
-        // Add the `srer` contract address to WETHGateway's whitelist.
-        {
-            Whitelist whitelist = Whitelist(wethGateway.whitelist());
-            vm.prank(whitelist.owner());
-            whitelist.add(address(srer));
-            assertTrue(whitelist.isWhitelisted(address(srer)));
-        }
         // Add the `srer` contract address to alETH AlchemistV2's whitelist.
-        {
-            Whitelist whitelist = Whitelist(alchemist.whitelist());
-            vm.prank(whitelist.owner());
-            whitelist.add(address(srer));
-            assertTrue(whitelist.isWhitelisted(address(srer)));
-        }
+        Whitelist whitelist = Whitelist(alchemist.whitelist());
+        vm.prank(whitelist.owner());
+        whitelist.add(address(srer));
+        assertTrue(whitelist.isWhitelisted(address(srer)));
 
         // Act as Scoopy, an EOA. Alchemix checks msg.sender === tx.origin to know if sender is an EOA.
         vm.startPrank(scoopy, scoopy);
@@ -145,18 +134,21 @@ contract SelfRepayingENSRenewalsTest is Test {
 
         // Warp to some time before `name` expiry date.
         bytes32 labelHash = keccak256(bytes(name));
-        uint256 expires = registrar.nameExpires(uint256(labelHash));
-        vm.warp(expires - 1 days);
+        uint256 expiresAt = registrar.nameExpires(uint256(labelHash));
+        vm.warp(expiresAt - 90 days);
 
-        // `srer` checker function should return false as `name` is not expired.
+        // `srer` checker function should return false if base fee is too high to renew.
         {
             (bool canExec1, bytes memory execPayload1) = srer.checker(name, scoopy);
             assertFalse(canExec1);
-            assertEq(execPayload1, bytes("SelfRepayingENSRenewals is not expired yet."));
+            assertEq(execPayload1, bytes("Base fee too high"));
         }
 
         // Wait for `name` to be in its grace period.
-        vm.warp(expires + 1 days);
+        vm.warp(expiresAt - 10 days);
+
+        // Set the base fee below the max base fee allowed to renew.
+        vm.fee(80 gwei);
 
         // `srer` checker function should tell Gelato to execute the task by return true and the its payload.
         (bool canExec, bytes memory execPayload) = srer.checker(name, scoopy);
@@ -172,7 +164,7 @@ contract SelfRepayingENSRenewalsTest is Test {
         // Gelato now execute the defined task.
         // `srer` called by Gelato should renew `name` for `renewalDuration` for `namePrice` by minting some alETH debt.
         vm.expectEmit(true, true, true, true, address(controller));
-        emit NameRenewed(name, labelHash, namePrice, expires + srer.renewalDuration());
+        emit NameRenewed(name, labelHash, namePrice, expiresAt + srer.renewalDuration());
         execRenewTask(gelatoFee, name, scoopy);
 
         // Check `name`'s renewal increased `scoopy`'s Alchemix debt.
@@ -267,19 +259,13 @@ contract SelfRepayingENSRenewalsTest is Test {
     function testChecker() external {
         // Warp to some time before `name` expiry date.
         bytes32 labelHash = keccak256(bytes(name));
-        uint256 expires = registrar.nameExpires(uint256(labelHash));
-        vm.warp(expires - 1 days);
+        uint256 expiresAt = registrar.nameExpires(uint256(labelHash));
+        vm.warp(expiresAt - 4 days);
 
-        // `srer` checker function should return false as `name` is not expired.
-        {
-            (bool canExec1, bytes memory execPayload1) = srer.checker(name, scoopy);
-            assertFalse(canExec1);
-            assertEq(execPayload1, bytes("SelfRepayingENSRenewals is not expired yet."));
-        }
+        // Set the base fee below the max base fee allowed to renew.
+        vm.fee(101 gwei);
 
         // Wait for `name` to be in its grace period.
-        vm.warp(expires + 1 days);
-
         // `srer` checker function should tell Gelato to execute the task by return true and the its payload.
         (bool canExec, bytes memory execPayload) = srer.checker(name, scoopy);
         assertTrue(canExec);
@@ -287,6 +273,55 @@ contract SelfRepayingENSRenewalsTest is Test {
             srer.renew,
             (name, scoopy)
         ));
+    }
+
+    /// @dev Test `srer.checker()`'s returns false when the base fee is too high.
+    function testCheckerWhenBaseFeeTooHigh() external {
+        // Wait for `name` to be in its grace period.
+        bytes32 labelHash = keccak256(bytes(name));
+        uint256 expiresAt = registrar.nameExpires(uint256(labelHash));
+        vm.warp(expiresAt - 80 days);
+
+        // Set the base fee.
+        vm.fee(30 gwei);
+
+        // `srer` checker function should return false as `name` is not expired.
+        (bool canExec, bytes memory execPayload) = srer.checker(name, scoopy);
+        assertFalse(canExec);
+        assertEq(execPayload, bytes("Base fee too high"));
+    }
+
+    /// @dev Test the internal function `srer._getVariableMaxBaseFee()` returns the correct base fee limit.
+    function testVariableMaxRenewBaseFee() external {
+        // We don't want to try to renew before 90 days before expiry.
+        assertEq(srer.publicGetVariableMaxBaseFee(-90 days), 0);
+        // 80 days before expiry we want to renew at a max base fee of 10 gwei.
+        assertEq(srer.publicGetVariableMaxBaseFee(-80 days), 10 gwei);
+        // 40 days before expiry we want to renew at a max base fee of 50 gwei.
+        assertApproxEqAbs(srer.publicGetVariableMaxBaseFee(-40 days), 50 gwei, 1 gwei);
+        // 10 days before expiry we want to renew at a max base fee of around 80 gwei.
+        assertApproxEqAbs(srer.publicGetVariableMaxBaseFee(-10 days), 80 gwei, 2 gwei);
+        // 2 days before expiry we want to renew at a max base fee of around 125 gwei.
+        assertApproxEqAbs(srer.publicGetVariableMaxBaseFee(-2 days), 125 gwei, 1 gwei);
+        // Since expiry we remove the base fee limit.
+        assertEq(srer.publicGetVariableMaxBaseFee(1), type(uint256).max);
+    }
+
+    /// @dev Test `srer.getVariableMaxBaseFee()` returns the correct base fee limit for `name`.
+    function testGetVariableMaxBaseFeeByName() external {
+        // Warp to 90 days before expiry.
+        bytes32 labelHash = keccak256(bytes(name));
+        uint256 expiresAt = registrar.nameExpires(uint256(labelHash));
+        vm.warp(expiresAt - 90 days);
+
+        // Before being expired, it should return 0.
+        assertEq(srer.getVariableMaxBaseFee(name), 0);
+
+        // Wait for `name` to be in its 90 days renew period.
+        vm.warp(expiresAt - 40 days);
+
+        // 40 days before expiry we want to renew at a max base fee of 50 gwei.
+        assertApproxEqAbs(srer.getVariableMaxBaseFee(name), 50 gwei, 1 gwei);
     }
 
     /// @dev Test `srer.renew()` reverts when the caller isn't the `GelatoOps` contract.

@@ -8,7 +8,6 @@ contract SelfRepayingENSRenewalsStub is SelfRepayingENSRenewals {
 
     constructor(
         IAlchemistV2 _alchemist,
-        WETHGateway _wethGateway,
         ICurveAlETHPool _alETHPool,
         ICurveCalc _curveCalc,
         ETHRegistrarController _controller,
@@ -16,7 +15,6 @@ contract SelfRepayingENSRenewalsStub is SelfRepayingENSRenewals {
         IGelatoOps _gelatoOps
     ) SelfRepayingENSRenewals(
             _alchemist,
-            _wethGateway,
             _alETHPool,
             _curveCalc,
             _controller,
@@ -28,5 +26,9 @@ contract SelfRepayingENSRenewalsStub is SelfRepayingENSRenewals {
 
     function publicGetAlETHToMint(uint256 neededETH) public view returns (uint256) {
         return _getAlETHToMint(neededETH);
+    }
+
+    function publicGetVariableMaxBaseFee(int256 expiredDuration) external pure returns (uint256) {
+        return _getVariableMaxBaseFee(expiredDuration);
     }
 }
