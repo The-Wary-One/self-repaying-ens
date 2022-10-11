@@ -1,4 +1,4 @@
-#+title: Self Repaying ENS Renewals
+#+title: Self Repaying ENS
 #+author: Wary
 
 An Alchemix user can subscribe to the Self Repaying ENS Renewals service to automatically renew an expired ENS name. The renewal fee is paid by adding some self repaying debt to the user Alchemix account 🧙🪄💸. It was made for [[https://gitcoin.co/hackathon/moneylegos][Gitcoin's Money Legos Hackaton]].
@@ -18,16 +18,16 @@ The Self Repaying ENS Renewals is a smart contract written in Solidity that uses
 - Register a ENS name
 - Deposit enough funds to the =alETH= AlchemistV2 contract
 
-1. Allow the =SelfRepayingENSRenewals= contract (aka SRER) to mint enough =alETH= debt to cover multiple renewals
-2. Subscribe to the =SRER= service for this name
+1. Allow the =SelfRepayingENS= contract (aka SRENS) to mint enough =alETH= debt to cover multiple renewals
+2. Subscribe to the =SRENS= service for this name
 
 Voila ! 🥳
 That's it for the user actions.
 
 This is where the automated actions starts
 - Subscribing to the service for this name tells the =Gelato Network= to monitor regularly its expiry
-- Once it expires, =Gelato= tells =SRER= to renew it
-- To renew it, =SRER= mint enough =alETH= debt to pay for the renewal and =Gelato= fees in ETH
+- Once it expires, =Gelato= tells =SRENS= to renew it
+- To renew it, =SRENS= mint enough =alETH= debt to pay for the renewal and =Gelato= fees in ETH
 
 
 * 🚚 How to install
@@ -38,8 +38,8 @@ This is where the automated actions starts
 
 Clone this repository and install the dependencies
 #+begin_src bash
-git clone git@github.com:The-Wary-One/self-repaying-ens-renewals.git
-mkdir self-repaying-ens-renewals
+git clone git@github.com:The-Wary-One/self-repaying-ens.git
+mkdir self-repaying-ens
 forge install
 #+end_src
 
@@ -47,7 +47,7 @@ forge install
 * 👷 How to test
 
 The tests needs to be run in a Mainnet fork.
-Set the environment variable with your API keys
+Set the environment variables with your API keys
 #+begin_src bash
 cat .env.example > .env
 vim .env
@@ -57,3 +57,31 @@ Run the tests
 #+begin_src bash
 forge test
 #+end_src
+
+
+* 🏃 How to run locally
+
+Set the environment variables with your API keys
+#+begin_src bash
+cat .env.example > .env
+vim .env
+#+end_src
+
+Start [[https://book.getfoundry.sh/anvil/][anvil]] as a Mainnet fork using the custom task
+#+begin_src bash
+./tasks/start-fork-local.sh
+#+end_src
+
+Run the custom deploy task
+#+begin_src bash
+./tasks/deploy-local.sh
+#+end_src
+
+The deployed contract address is printed in the task logs.
+
+Check if the contract is ready to be used by looking at the return values of this task
+#+begin_src bash
+./tasks/check-deploy-local.sh
+#+end_src
+
+

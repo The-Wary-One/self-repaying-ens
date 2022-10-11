@@ -26,9 +26,9 @@ library Events {
     event Unsubscribed(address indexed subscriber, string indexed name);
 }
 
-/// @title SelfRepayingENSRenewals
+/// @title SelfRepayingENS
 /// @author Wary
-contract SelfRepayingENSRenewals {
+contract SelfRepayingENS {
 
     /// @notice The ENS name renewal duration in seconds.
     uint256 constant public renewalDuration = 365 days;
@@ -102,7 +102,7 @@ contract SelfRepayingENSRenewals {
     ///
     /// @notice Emits a {Subscribed} event.
     ///
-    /// @notice **_NOTE:_** The `SelfRepayingENSRenewals` contract must have enough `AlchemistV2.mintAllowance()` to renew `name`. The can be done via the `AlchemistV2.approveMint()` method.
+    /// @notice **_NOTE:_** The `SelfRepayingENS` contract must have enough `AlchemistV2.mintAllowance()` to renew `name`. The can be done via the `AlchemistV2.approveMint()` method.
     /// @notice **_NOTE:_** The `msg.sender` must make sure they have enough `AlchemistV2.totalValue()` to cover `name` renewal fee.
     ///
     /// @param name The ENS name to monitor and renew.
@@ -179,7 +179,7 @@ contract SelfRepayingENSRenewals {
     ///
     /// @notice **_NOTE:_** This function can only be called by a Gelato Executor.
     ///
-    /// @notice **_NOTE:_** When renewing, the `SelfRepayingENSRenewals` contract must have **mintAllowance()** to mint new alETH debt tokens on behalf of **subscriber** to cover **name** renewal and the Gelato fee costs. This can be done via the `AlchemistV2.approveMint()` method.
+    /// @notice **_NOTE:_** When renewing, the `SelfRepayingENS` contract must have **mintAllowance()** to mint new alETH debt tokens on behalf of **subscriber** to cover **name** renewal and the Gelato fee costs. This can be done via the `AlchemistV2.approveMint()` method.
     ///
     /// @dev We annotate it payable to make it cheaper. Do not send ETH.
     ///
