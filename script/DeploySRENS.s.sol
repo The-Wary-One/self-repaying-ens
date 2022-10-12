@@ -2,10 +2,8 @@
 pragma solidity ^0.8.17;
 
 import { Script } from "forge-std/Script.sol";
-import {
-    SelfRepayingENS
-} from "src/SelfRepayingENS.sol";
-import { GetConfig } from "script/GetConfig.s.sol";
+import { SelfRepayingENS } from "src/SelfRepayingENS.sol";
+import { Toolbox } from "script/Toolbox.s.sol";
 
 contract DeploySRENS is Script {
 
@@ -14,8 +12,8 @@ contract DeploySRENS is Script {
     /// @dev Deploy the contract on the target chain.
     function run() external returns (SelfRepayingENS) {
         // Get the config.
-        GetConfig c = new GetConfig();
-        GetConfig.Config memory config = c.run();
+        Toolbox toolbox = new Toolbox();
+        Toolbox.Config memory config = toolbox.getConfig();
 
         vm.startBroadcast();
 

@@ -67,21 +67,27 @@ cat .env.example > .env
 vim .env
 #+end_src
 
-Start [[https://book.getfoundry.sh/anvil/][anvil]] as a Mainnet fork using the custom task
+Start [[https://book.getfoundry.sh/anvil/][anvil]] as a Mainnet fork
 #+begin_src bash
 ./tasks/start-fork-local.sh
 #+end_src
 
-Run the custom deploy task
+Deploy the =SRENS= contract on it
 #+begin_src bash
 ./tasks/deploy-local.sh
 #+end_src
-
 The deployed contract address is printed in the task logs.
 
-Check if the contract is ready to be used by looking at the return values of this task
+Add the deployed =SRENS= contract to the Alchemist's whitelist
+#+begin_src bash
+./tasks/whitelist-srens-local.sh <deployed SRENS address>
+#+end_src
+
+Check if the =SRENS= contract is ready to be used
 #+begin_src bash
 ./tasks/check-deploy-local.sh
 #+end_src
+
+Now play with the app using the other tasks inside the =tasks= directory. 🥳
 
 

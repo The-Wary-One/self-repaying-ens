@@ -17,16 +17,15 @@ import {
     IGelatoOps,
     Events
 } from "./stubs/SelfRepayingENS.sol";
-import { GetConfig } from "script/GetConfig.s.sol";
 import { DeploySRENS } from "script/DeploySRENS.s.sol";
-import { CheckDeploy } from "script/CheckDeploy.s.sol";
+import { Toolbox } from "script/Toolbox.s.sol";
 
 contract SelfRepayingENSTest is Test {
 
     using FixedPointMathLib for uint256;
 
     /* --- MAINNET CONFIG --- */
-    GetConfig.Config config;
+    Toolbox.Config config;
 
     /* --- TEST CONFIG --- */
     SelfRepayingENS srens;
@@ -44,17 +43,16 @@ contract SelfRepayingENSTest is Test {
         require(block.chainid == 1, "Tests should be run on a mainnet fork");
 
         // Get the mainnet config.
-        GetConfig c = new GetConfig();
-        config = c.run();
+        Toolbox toolbox = new Toolbox();
+        config = toolbox.getConfig();
 
         // Deploy the SelfRepayingENS contract using the deployment script.
         DeploySRENS deployer = new DeploySRENS();
         srens = deployer.run();
 
         // The contract should not be ready for use.
-        CheckDeploy checker = new CheckDeploy();
         {
-            (bool isReady1, string memory message1) = checker.check(srens);
+            (bool isReady1, string memory message1) = toolbox.check(srens);
             assertFalse(isReady1);
             assertEq(message1, "Alchemix must whitelist the contract");
         }
@@ -66,7 +64,7 @@ contract SelfRepayingENSTest is Test {
         assertTrue(whitelist.isWhitelisted(address(srens)));
 
         // The contract is ready to be used.
-        (bool isReady, string memory message) = checker.check(srens);
+        (bool isReady, string memory message) = toolbox.check(srens);
         assertTrue(isReady);
         assertEq(message, "Contract ready !");
 
