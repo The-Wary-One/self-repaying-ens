@@ -14,8 +14,7 @@ import {
     BaseRegistrarImplementation,
     ICurveAlETHPool,
     ICurveCalc,
-    IGelatoOps,
-    Events
+    IGelatoOps
 } from "./stubs/SelfRepayingENS.sol";
 import { DeploySRENS } from "script/DeploySRENS.s.sol";
 import { Toolbox } from "script/Toolbox.s.sol";
@@ -23,6 +22,10 @@ import { Toolbox } from "script/Toolbox.s.sol";
 contract SelfRepayingENSTest is Test {
 
     using FixedPointMathLib for uint256;
+
+    /// @dev Copied from the `SelfRepayingENS` contract.
+    event Subscribed(address indexed subscriber, string indexed indexedName, string name);
+    event Unsubscribed(address indexed subscriber, string indexed indexedName, string name);
 
     /* --- MAINNET CONFIG --- */
     Toolbox.Config config;
@@ -132,7 +135,7 @@ contract SelfRepayingENSTest is Test {
         // Subscribe to the Self Repaying ENS Renewals service for `name`.
         // `srens` should emit a {Subscribed} event.
         vm.expectEmit(true, true, false, false, address(srens));
-        emit Events.Subscribed(scoopy, name);
+        emit Subscribed(scoopy, name, name);
         srens.subscribe(name);
 
         vm.stopPrank();
@@ -149,9 +152,8 @@ contract SelfRepayingENSTest is Test {
             assertEq(execPayload1, bytes("Base fee too high"));
         }
 
-        // Wait for `name` to be in its grace period.
+        // Wait for `name` to be in its renew period.
         vm.warp(expiresAt - 10 days);
-
         // Set the base fee below the max base fee allowed to renew.
         vm.fee(80 gwei);
 
@@ -191,7 +193,7 @@ contract SelfRepayingENSTest is Test {
         // Subscribe to the Self Repaying ENS Renewals service for `name`.
         // `srens` should emit a {Subscribed} event.
         vm.expectEmit(true, true, false, false, address(srens));
-        emit Events.Subscribed(scoopy, name);
+        emit Subscribed(scoopy, name, name);
         bytes32 task = srens.subscribe(name);
 
         // `srens.getTaskId()` should return the same task id.
@@ -206,6 +208,18 @@ contract SelfRepayingENSTest is Test {
         // Try to subscribe with a ENS name that doesn't exists.
         vm.expectRevert(SelfRepayingENS.IllegalArgument.selector);
         srens.subscribe("dsadsfsdfdsf");
+    }
+
+    /// @dev Test `srens.subscribe()` reverts when inputing an expired ENS name that is isn't in its grace period (i.e. available to register).
+    function testSubscribeWhenNameIsFullyExpired() external {
+        // Act as scoopy, an EOA, for the next call.
+        vm.prank(scoopy, scoopy);
+
+        // Try to subscribe with a ENS name that needs to be re-registered not renewed.
+        vm.expectRevert(SelfRepayingENS.IllegalArgument.selector);
+        // This name must be expired and not within its grace period.
+        // Found this one randomly ! 😰
+        srens.subscribe("sdfsdfsdf");
     }
 
     /// @dev Test `srens.subscribe()` reverts when subscribing twice with the same subscriber.
@@ -232,7 +246,7 @@ contract SelfRepayingENSTest is Test {
         // Subscribe to the Self Repaying ENS Renewals service for `name`.
         // `srens` should emit a {Subscribed} event.
         vm.expectEmit(true, true, false, false, address(srens));
-        emit Events.Subscribed(address(0x1), name);
+        emit Subscribed(address(0x1), name, name);
         srens.subscribe(name);
     }
 
@@ -246,7 +260,7 @@ contract SelfRepayingENSTest is Test {
         // Unsubscribe to the Self Repaying ENS Renewals service for `name`.
         // `srens` should emit a {Unubscribed} event.
         vm.expectEmit(true, true, false, false, address(srens));
-        emit Events.Unsubscribed(scoopy, name);
+        emit Unsubscribed(scoopy, name, name);
         srens.unsubscribe(name);
     }
 
@@ -403,7 +417,7 @@ contract SelfRepayingENSTest is Test {
         // Execute the renew Gelato Task for `fee`.
         bytes32 resolverHash = keccak256(abi.encode(
             address(srens),
-            abi.encodeCall(srens.checker, (name, subscriber))
+            abi.encodeCall(srens.checker, (_name, subscriber))
         ));
         config.gelatoOps.exec(
             fee,

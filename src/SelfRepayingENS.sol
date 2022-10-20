@@ -10,22 +10,6 @@ import { ICurveAlETHPool } from "./interfaces/ICurveAlETHPool.sol";
 import { ICurveCalc } from "./interfaces/ICurveCalc.sol";
 import { IGelatoOps } from "./interfaces/IGelatoOps.sol";
 
-// We put the event in this external library to reuse them in our tests.
-library Events {
-
-    /// @notice An event which is emitted when a user subscribe for an self repaying ENS name renewals.
-    ///
-    /// @param subscriber The address of the user subscribed to this service.
-    /// @param name The ENS name to renew.
-    event Subscribed(address indexed subscriber, string indexed name);
-
-    /// @notice An event which is emitted when a user unsubscribe to the self repaying ENS name renewal service.
-    ///
-    /// @param subscriber The address of the user unsubscribed from this service.
-    /// @param name The ENS name to not renew anymore.
-    event Unsubscribed(address indexed subscriber, string indexed name);
-}
-
 /// @title SelfRepayingENS
 /// @author Wary
 contract SelfRepayingENS {
@@ -59,6 +43,22 @@ contract SelfRepayingENS {
 
     /// @notice The Gelato address for ETH.
     address constant ETH = 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE;
+
+    /// @notice An event which is emitted when a user subscribe for an self repaying ENS name renewals.
+    ///
+    /// @param subscriber The address of the user subscribed to this service.
+    /// @param indexedName The ENS name to renew.
+    /// @param name The ENS name to renew.
+    /// @dev We also expose the non indexed name for consumers (e.g. UI).
+    event Subscribed(address indexed subscriber, string indexed indexedName, string name);
+
+    /// @notice An event which is emitted when a user unsubscribe to the self repaying ENS name renewal service.
+    ///
+    /// @param subscriber The address of the user unsubscribed from this service.
+    /// @param indexedName The ENS name to renew.
+    /// @param name The ENS name to not renew anymore.
+    /// @dev We also expose the non indexed name for consumers.
+    event Unsubscribed(address indexed subscriber, string indexed indexedName, string name);
 
     /// @notice An error used to indicate that an action could not be completed because of an illegal argument was passed to the function.
     error IllegalArgument();
@@ -109,8 +109,10 @@ contract SelfRepayingENS {
     /// @return task The Gelato task id.
     /// @dev We return the generated task id to simplify the `this.getTaskId()` Solidity test.
     function subscribe(string memory name) external returns (bytes32 task) {
-        // Check `name` exists.
-        if (registrar.nameExpires(uint256(keccak256(bytes(name)))) == 0) {
+        // Check `name` exists and is within its grace period if expired.
+        // The ENS grace period is 90 days but we chose to have a 1 day margin.
+        if (registrar.nameExpires(uint256(keccak256(bytes(name)))) + 89 days < block.timestamp) {
+            // The name needs to be registered not renewed.
             revert IllegalArgument();
         }
 
@@ -124,7 +126,7 @@ contract SelfRepayingENS {
             ETH
         );
 
-        emit Events.Subscribed(msg.sender, name);
+        emit Subscribed(msg.sender, name, name);
     }
 
     /// @notice Unsubscribe to the self repaying ENS renewals service for `name`.
@@ -143,7 +145,7 @@ contract SelfRepayingENS {
         // Cancel the Gelato task if it exists or reverts.
         gelatoOps.cancelTask(taskId);
 
-        emit Events.Unsubscribed(msg.sender, name);
+        emit Unsubscribed(msg.sender, name, name);
     }
 
     /// @notice Check if `name` should be renewed.
