@@ -34,7 +34,9 @@ This is where the automated actions starts
 
 ⚠ Prerequisites:
 - [[https://git-scm.com/downloads][git]]
+- [[https://www.rust-lang.org/][rust]]
 - [[https://book.getfoundry.sh/getting-started/installation][foundry]]
+- [[https://stedolan.github.io/jq/][jq]]
 
 Clone this repository and install the dependencies
 #+begin_src bash
@@ -67,25 +69,14 @@ cat .env.example > .env
 vim .env
 #+end_src
 
-Start [[https://book.getfoundry.sh/anvil/][anvil]] as a Mainnet fork
+Start [[https://book.getfoundry.sh/anvil/][anvil]] as a Mainnet fork in a terminal
 #+begin_src bash
 ./tasks/start-fork-local.sh
 #+end_src
 
-Deploy the =SRENS= contract on it
+Run the local setup task
 #+begin_src bash
-./tasks/deploy-local.sh
-#+end_src
-The deployed contract address is printed in the task logs.
-
-Add the deployed =SRENS= contract to the Alchemist's whitelist
-#+begin_src bash
-./tasks/whitelist-srens-local.sh <deployed SRENS address>
-#+end_src
-
-Check if the =SRENS= contract is ready to be used
-#+begin_src bash
-./tasks/check-deploy-local.sh
+./tasks/setup-env-local.sh
 #+end_src
 
 Now play with the app using the other tasks inside the =tasks= directory. 🥳

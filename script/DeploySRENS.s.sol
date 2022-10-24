@@ -7,8 +7,6 @@ import { Toolbox } from "script/Toolbox.s.sol";
 
 contract DeploySRENS is Script {
 
-    event log_named_address(string key, address val);
-
     /// @dev Deploy the contract on the target chain.
     function run() external returns (SelfRepayingENS) {
         // Get the config.
@@ -28,8 +26,6 @@ contract DeploySRENS is Script {
         );
 
         vm.stopBroadcast();
-
-        emit log_named_address("Contract deployed to", address(srens));
 
         return srens;
     }

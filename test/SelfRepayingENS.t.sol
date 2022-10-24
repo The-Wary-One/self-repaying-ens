@@ -81,10 +81,10 @@ contract SelfRepayingENSTest is Test {
         // Get the first supported yield ETH token.
         address[] memory supportedTokens = config.alchemist.getSupportedYieldTokens();
         // Create an Alchemix account.
-        config.wethGateway.depositUnderlying{value: 10e18}(
+        config.wethGateway.depositUnderlying{value: 10 ether}(
             address(config.alchemist),
             supportedTokens[0],
-            10e18,
+            10 ether,
             scoopy,
             1
         );

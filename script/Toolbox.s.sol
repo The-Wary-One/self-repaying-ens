@@ -86,7 +86,7 @@ contract Toolbox is Script {
     /// @dev Check if the last deployed `SRENS` contract is ready to be used.
     function check() public returns (bool isReady, string memory message) {
         // Get the last deployment address on this chain.
-        SelfRepayingENS srens = this.getLastSRENSDeployment();
+        SelfRepayingENS srens = getLastSRENSDeployment();
         return check(srens);
     }
 
@@ -96,19 +96,94 @@ contract Toolbox is Script {
         if (address(srens).code.length == 0) {
             return (false, "Not Deployed");
         }
-        emit log_named_address("Last contract deployed to", address(srens));
 
         // Get the chain config.
-        Config memory config = this.getConfig();
+        Config memory config = getConfig();
         // Check if `srens` is whitelisted by Alchemix's AlchemistV2 alETH contract.
         Whitelist whitelist = Whitelist(config.alchemist.whitelist());
         if (!whitelist.isWhitelisted(address(srens))) {
             return (false, "Alchemix must whitelist the contract");
         }
 
-        console2.logString("Contract whitelisted by Alchemix");
-
         // All checks passed.
         return (true, "Contract ready !");
+    }
+
+    /// @dev Subscribe to renew `name`.
+    function subscribe(string calldata name) external {
+        // Check srens was deployed.
+        (bool isReady, string memory message) = check();
+        if (!isReady) {
+            revert(message);
+        }
+
+        // Subscribe to renew `name`.
+        SelfRepayingENS srens = getLastSRENSDeployment();
+        vm.broadcast();
+        srens.subscribe(name);
+    }
+
+    /// @dev Approve the last deployed srens contract to mint alETH debt.
+    function approveMint() external {
+        // Get the config.
+        Config memory config = getConfig();
+        // Get the last deployment address on this chain.
+        SelfRepayingENS srens = getLastSRENSDeployment();
+
+        // Approve srens to mint debt.
+        vm.broadcast();
+        config.alchemist.approveMint(address(srens), type(uint256).max);
+    }
+
+    /// @dev Create an Alchemix account.
+    function depositUnderlying() external {
+        // Get the config.
+        Config memory config = getConfig();
+
+        // Get the first supported yield ETH token.
+        address[] memory supportedTokens = config.alchemist.getSupportedYieldTokens();
+        // Create an Alchemix account.
+        vm.broadcast();
+        config.wethGateway.depositUnderlying{value: 10 ether}(
+            address(config.alchemist),
+            supportedTokens[0],
+            10 ether,
+            msg.sender,
+            1
+        );
+    }
+
+    /// @dev Commit to register a ENS name on the local chain.
+    function commitName(string calldata name) external {
+        // Get the config.
+        Config memory config = getConfig();
+
+        // Generate commitment.
+        bytes32 commitment = config.controller.makeCommitment(
+            name,
+            msg.sender,
+            keccak256(abi.encodePacked(name, msg.sender))
+        );
+
+        // Commit the commitment to commit to register the name. We love to commit even if our ex doesn't agree.
+        vm.broadcast();
+        config.controller.commit(commitment);
+
+        // Now we must wait at least 1 min.
+    }
+
+    /// @dev Register a ENS name on the local chain.
+    function registerName(string calldata name) external {
+        // Get the config.
+        Config memory config = getConfig();
+
+        // Register name for 1 year.
+        vm.broadcast();
+        config.controller.register{value: 0.1 ether}(
+            name,
+            msg.sender,
+            365 days,
+            keccak256(abi.encodePacked(name, msg.sender))
+        );
     }
 }
