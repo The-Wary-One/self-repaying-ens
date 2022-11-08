@@ -8,13 +8,8 @@ import { Whitelist } from "alchemix/utils/Whitelist.sol";
 import {
     SelfRepayingENSStub,
     SelfRepayingENS,
-    IAlchemistV2,
     AlchemicTokenV2,
-    ETHRegistrarController,
-    BaseRegistrarImplementation,
-    ICurveAlETHPool,
-    ICurveCalc,
-    IGelatoOps
+    LibDataTypes
 } from "./stubs/SelfRepayingENS.sol";
 import { DeploySRENS } from "script/DeploySRENS.s.sol";
 import { Toolbox } from "script/Toolbox.s.sol";
@@ -231,7 +226,7 @@ contract SelfRepayingENSTest is Test {
         vm.prank(scoopy, scoopy);
 
         // Try to subscribe a second time as `scoopy`.
-        vm.expectRevert("Ops: createTask: Sender already started task"); // from GelatoOps.
+        vm.expectRevert("Ops.createTask: Duplicate task"); // from GelatoOps.
         srens.subscribe(name);
     }
 
@@ -270,7 +265,7 @@ contract SelfRepayingENSTest is Test {
         vm.prank(scoopy, scoopy);
 
         // Try to subscribe with a ENS name that doesn't exists.
-        vm.expectRevert("Ops: cancelTask: Sender did not start task yet"); // from Gelato Ops.
+        vm.expectRevert("Ops.cancelTask: Task not found"); // from Gelato Ops.
         srens.unsubscribe("dsadsfsdfdsf");
     }
 
@@ -419,18 +414,23 @@ contract SelfRepayingENSTest is Test {
             address(srens),
             abi.encodeCall(srens.checker, (_name, subscriber))
         ));
+        LibDataTypes.Module[] memory modules = new LibDataTypes.Module[](1);
+        modules[0] = LibDataTypes.Module.RESOLVER;
+        bytes[] memory args = new bytes[](1);
+        args[0] = abi.encode(resolverHash);
+
         config.gelatoOps.exec(
-            fee,
-            ETH,
             address(srens),
-            false,
-            true,
-            resolverHash,
             address(srens),
             abi.encodeCall(
                 srens.renew,
                 (_name, subscriber)
-            )
+            ),
+            LibDataTypes.ModuleData({ modules: modules, args: args }),
+            fee,
+            ETH,
+            false,
+            true
         );
     }
 }

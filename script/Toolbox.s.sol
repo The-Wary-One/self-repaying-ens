@@ -12,7 +12,7 @@ import {
     BaseRegistrarImplementation,
     ICurveAlETHPool,
     ICurveCalc,
-    IGelatoOps
+    Ops
 } from "src/SelfRepayingENS.sol";
 
 contract Toolbox is Script {
@@ -26,7 +26,7 @@ contract Toolbox is Script {
         ICurveCalc curveCalc;
         ETHRegistrarController controller;
         BaseRegistrarImplementation registrar;
-        IGelatoOps gelatoOps;
+        Ops gelatoOps;
         WETHGateway wethGateway;
         address gelato;
     }
@@ -55,7 +55,7 @@ contract Toolbox is Script {
         // Get the value at `contractAddress` of a `CREATE` transaction.
         address addr = json.readAddress(
             // FIXME: This should be correct "$.transactions.[?(@.transactionType == 'CREATE' && @.contractName == 'SelfRepayingENS')].contractAddress"
-            "$.transactions[?(@.transactionType == 'CREATE')].contractAddress"
+            "transactions[?(@.transactionType == 'CREATE')].contractAddress"
         );
         SelfRepayingENS srens = SelfRepayingENS(payable(addr));
 
@@ -76,7 +76,7 @@ contract Toolbox is Script {
         string memory path = string.concat(root, "/deployments/externals.json");
         string memory json = vm.readFile(path);
         // Will panic if the network config is missing.
-        bytes memory raw = json.parseRaw(string.concat("$.chainId.", vm.toString(block.chainid)));
+        bytes memory raw = json.parseRaw(string.concat("chainId.", vm.toString(block.chainid)));
         Config memory config = abi.decode(raw, (Config));
         // Cache value.
         _config = config;

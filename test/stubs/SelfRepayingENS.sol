@@ -12,7 +12,7 @@ contract SelfRepayingENSStub is SelfRepayingENS {
         ICurveCalc _curveCalc,
         ETHRegistrarController _controller,
         BaseRegistrarImplementation _registrar,
-        IGelatoOps _gelatoOps
+        Ops _gelatoOps
     ) SelfRepayingENS(
             _alchemist,
             _alETHPool,

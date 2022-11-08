@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.17;
 
+import { toDaysWadUnsafe, wadExp, wadDiv } from "solmate/utils/SignedWadMath.sol";
 import { IAlchemistV2 } from "alchemix/interfaces/IAlchemistV2.sol";
 import { AlchemicTokenV2 } from "alchemix/AlchemicTokenV2.sol";
 import { ETHRegistrarController, BaseRegistrarImplementation } from "ens/ethregistrar/ETHRegistrarController.sol";
-import { toDaysWadUnsafe, wadExp, wadDiv } from "solmate/utils/SignedWadMath.sol";
+import { Ops, LibDataTypes } from "gelato/Ops.sol";
 
 import { ICurveAlETHPool } from "./interfaces/ICurveAlETHPool.sol";
 import { ICurveCalc } from "./interfaces/ICurveCalc.sol";
-import { IGelatoOps } from "./interfaces/IGelatoOps.sol";
 
 /// @title SelfRepayingENS
 /// @author Wary
@@ -18,28 +18,28 @@ contract SelfRepayingENS {
     uint256 constant public renewalDuration = 365 days;
 
     /// @notice The Alchemix alETH alchemistV2 contract.
-    IAlchemistV2 immutable alchemist;
+    IAlchemistV2 immutable public alchemist;
 
     /// @notice The Alchemix alETH AlchemicTokenV2 contract.
-    AlchemicTokenV2 immutable alETH;
+    AlchemicTokenV2 immutable public alETH;
 
     /// @notice The alETH + ETH Curve Pool contract.
-    ICurveAlETHPool immutable alETHPool;
+    ICurveAlETHPool immutable public alETHPool;
 
     /// @notice The CurveCalc contract.
-    ICurveCalc immutable curveCalc;
+    ICurveCalc immutable public curveCalc;
 
     /// @notice The ENS ETHRegistrarController (i.e. .eth controller) contract.
-    ETHRegistrarController immutable controller;
+    ETHRegistrarController immutable public controller;
 
     /// @notice The ENS BaseRegistrarImplementation (i.e. .eth registrar) contract.
-    BaseRegistrarImplementation immutable registrar;
+    BaseRegistrarImplementation immutable public registrar;
 
     /// @notice The Gelato contract.
-    address payable public immutable gelato;
+    address payable immutable public gelato;
 
     /// @notice The Gelato Ops contract.
-    IGelatoOps immutable gelatoOps;
+    Ops immutable public gelatoOps;
 
     /// @notice The Gelato address for ETH.
     address constant ETH = 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE;
@@ -57,7 +57,8 @@ contract SelfRepayingENS {
     /// @param subscriber The address of the user unsubscribed from this service.
     /// @param indexedName The ENS name to renew.
     /// @param name The ENS name to not renew anymore.
-    /// @dev We also expose the non indexed name for consumers.
+    /// @dev We also expose the non i
+    /// ndexed name for consumers.
     event Unsubscribed(address indexed subscriber, string indexed indexedName, string name);
 
     /// @notice An error used to indicate that an action could not be completed because of an illegal argument was passed to the function.
@@ -78,7 +79,7 @@ contract SelfRepayingENS {
         ICurveCalc _curveCalc,
         ETHRegistrarController _controller,
         BaseRegistrarImplementation _registrar,
-        IGelatoOps _gelatoOps
+        Ops _gelatoOps
     ) payable {
         alchemist = _alchemist;
         alETHPool = _alETHPool;
@@ -118,11 +119,10 @@ contract SelfRepayingENS {
 
         // Create a gelato task to monitor `name`'s expiry and renew it.
         // We choose to pay Gelato when executing the task.
-        task = gelatoOps.createTaskNoPrepayment(
+        task = gelatoOps.createTask(
             address(this),
-            this.renew.selector,
-            address(this),
-            abi.encodeCall(this.checker, (name, msg.sender)),
+            abi.encode(this.renew.selector),
+            _getResolveModuleData(msg.sender, name),
             ETH
         );
 
@@ -238,21 +238,28 @@ contract SelfRepayingENS {
     /// @param name The ENS name to renew.
     /// @param subscriber The address of the subscriber.
     function getTaskId(address subscriber, string memory name) public view returns (bytes32) {
-        // The Gelato Ops getTaskId function is deprecated so we need to compute it ourselves.
-        // https://github.com/gelatodigital/ops/blob/66095337ef1d2f107e68a3c2c91d7302ceccb33a/contracts/Ops.sol#L329
+        LibDataTypes.ModuleData memory moduleData = _getResolveModuleData(subscriber, name);
+        return gelatoOps.getTaskId(
+            address(this),
+            address(this),
+            this.renew.selector,
+            moduleData,
+            ETH
+        );
+    }
+
+    /// @dev Helper function to get the Gelato resolve module data.
+    function _getResolveModuleData(address subscriber, string memory name) internal view returns (LibDataTypes.ModuleData memory) {
         bytes32 resolverHash = keccak256(abi.encode(
             address(this),
             abi.encodeCall(this.checker, (name, subscriber))
         ));
-        // https://github.com/gelatodigital/ops/blob/66095337ef1d2f107e68a3c2c91d7302ceccb33a/contracts/Ops.sol#L348
-        return keccak256(abi.encode(
-            address(this),
-            address(this),
-            this.renew.selector,
-            false,
-            ETH,
-            resolverHash
-        ));
+
+        LibDataTypes.Module[] memory modules = new LibDataTypes.Module[](1);
+        modules[0] = LibDataTypes.Module.RESOLVER;
+        bytes[] memory args = new bytes[](1);
+        args[0] = abi.encode(resolverHash);
+        return LibDataTypes.ModuleData({ modules: modules, args: args });
     }
 
     /// @dev Get the current alETH amount to get `neededETH` ETH amount back in from a Curve Pool exchange.
