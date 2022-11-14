@@ -18,7 +18,7 @@ fi
 
 name=$1
 # In wei.
-baseFee=$(( $2 * 1000000000))
+baseFee=$(($2 * 1000000000))
 # The second anvil account address.
 subscriber=0x70997970C51812dc3A010C7d01b50e0d17dc79C8
 # Get the last local deployment.
@@ -55,38 +55,40 @@ cast rpc anvil_setBalance 0x3CACa7b48D0573D793d3b0279b5F0029180E83b6 10000000000
 # Impersonate the Gelato contract.
 cast rpc anvil_impersonateAccount 0x3CACa7b48D0573D793d3b0279b5F0029180E83b6 > /dev/null
 
-resolverHash=$(cast call 0xB3f5503f93d5Ef84b06993a1975B9D21B962892F \
-    "getResolverHash(address,bytes)(bytes32)" \
-    "$address" \
-    "$(cast calldata "checker(string,address)" "$name" "$subscriber")")
 execData=$(cast calldata "renew(string,address)" "$name" "$subscriber")
+moduleData=$(forge script script/ToolboxLocal.s.sol:ToolboxLocal \
+    -f "http://localhost:8545" \
+    --private-key "0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d" \
+    -s "getResolveData(address,string,address)" "$address" "$name" "$subscriber" \
+    --silent \
+    --json | jq -rc '.returns."0".value')
 
 estimated=$(cast estimate 0xB3f5503f93d5Ef84b06993a1975B9D21B962892F \
     --from 0x3CACa7b48D0573D793d3b0279b5F0029180E83b6 \
-    "exec(uint256,address,address,bool,bool,bytes32,address,bytes)" \
+    "exec(address,address,bytes,(uint8[],bytes[]),uint256,address,bool,bool)" \
+    "$address" \
+    "$address" \
+    "$execData" \
+    "$moduleData" \
     55000000000000000 \
     0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE \
-    "$address" \
     false \
-    true \
-    "$resolverHash" \
-    "$address" \
-    "$execData")
+    true)
 
 res=$(cast send 0xB3f5503f93d5Ef84b06993a1975B9D21B962892F \
     --from 0x3CACa7b48D0573D793d3b0279b5F0029180E83b6 \
     --gas-price "$baseFee" \
     --gas-limit "$estimated" \
     --json \
-    "exec(uint256,address,address,bool,bool,bytes32,address,bytes)" \
+    "exec(address,address,bytes,(uint8[],bytes[]),uint256,address,bool,bool)" \
+    "$address" \
+    "$address" \
+    "$execData" \
+    "$moduleData" \
     "$estimated" \
     0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE \
-    "$address" \
     false \
-    true \
-    "$resolverHash" \
-    "$address" \
-    "$execData")
+    true)
 
 # Stop impersonating the Gelato contract.
 cast rpc anvil_stopImpersonatingAccount 0x3CACa7b48D0573D793d3b0279b5F0029180E83b6 > /dev/null
@@ -99,5 +101,5 @@ then
     cast run "$(echo "$res" | jq -r ".transactionHash")"
     exit 1
 fi
-
+                  #
 echo "✅ $name renewed!"

@@ -14,7 +14,7 @@ days=$1
 seconds=$(( days * 24 * 60 * 60 ))
 
 # Fast forward by n days amount of seconds.
-cast rpc anvil_setBlockTimestampInterval $seconds > /dev/null
+cast rpc anvil_increaseTime $seconds > /dev/null
 
 # Mine the block
 cast rpc anvil_mine > /dev/null
