@@ -1,6 +1,9 @@
 name: test
 
-on: workflow_dispatch
+on:
+  push:
+    branches:
+      - "main"
 
 env:
   FOUNDRY_PROFILE: ci
@@ -11,7 +14,7 @@ jobs:
       fail-fast: true
 
     name: Foundry project
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v3
         with:
@@ -29,6 +32,9 @@ jobs:
         id: build
 
       - name: Run Forge tests
+        env:
+          RPC_MAINNET: ${{ secrets.RPC_MAINNET }}
+          BLOCK_NUMBER_MAINNET: 15962250
         run: |
           forge test -vvv
         id: test
