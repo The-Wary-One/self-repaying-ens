@@ -8,10 +8,11 @@ import {
     BaseRegistrarImplementation
 } from "../lib/ens-contracts/contracts/ethregistrar/ETHRegistrarController.sol";
 import {Ops, LibDataTypes} from "../lib/ops/contracts/Ops.sol";
+import {Multicall} from "../lib/openzeppelin/contracts/utils/Multicall.sol";
 
 /// @title SelfRepayingENS
 /// @author Wary
-contract SelfRepayingENS {
+contract SelfRepayingENS is Multicall {
     /// @notice The ENS name renewal duration in seconds.
     uint256 public constant renewalDuration = 365 days;
 

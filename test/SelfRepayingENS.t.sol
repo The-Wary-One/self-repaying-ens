@@ -97,7 +97,7 @@ contract SelfRepayingENSTest is Test {
         // Scoopy, the subscriber, needs to allow `srens` to use the `router`.
         config.router.approve(address(srens), type(uint256).max);
 
-        // Subscribe to the Self Repaying ENS Renewals service for `name`.
+        // Subscribe to the Self Repaying ENS service for `name`.
         // `srens` should emit a {Subscribed} event.
         vm.expectEmit(true, true, false, false, address(srens));
         emit Subscribed(scoopy, name, name);
@@ -146,7 +146,7 @@ contract SelfRepayingENSTest is Test {
         // Act as scoopy, an EOA.
         vm.prank(scoopy, scoopy);
 
-        // Subscribe to the Self Repaying ENS Renewals service for `name`.
+        // Subscribe to the Self Repaying ENS service for `name`.
         // `srens` should emit a {Subscribed} event.
         vm.expectEmit(true, true, false, false, address(srens));
         emit Subscribed(scoopy, name, name);
@@ -161,7 +161,7 @@ contract SelfRepayingENSTest is Test {
         // Act as scoopy, an EOA, for the next call.
         vm.prank(scoopy, scoopy);
 
-        // Try to subscribe with a ENS name that doesn't exists.
+        // Try to subscribe with a ENS name that doesn't exist.
         vm.expectRevert(SelfRepayingENS.IllegalArgument.selector);
         srens.subscribe("dsadsfsdfdsf");
     }
@@ -199,7 +199,7 @@ contract SelfRepayingENSTest is Test {
         // Act as another, an EOA, for the next call.
         vm.prank(address(0x1), address(0x1));
 
-        // Subscribe to the Self Repaying ENS Renewals service for `name`.
+        // Subscribe to the Self Repaying ENS service for `name`.
         // `srens` should emit a {Subscribed} event.
         vm.expectEmit(true, true, false, false, address(srens));
         emit Subscribed(address(0x1), name, name);
@@ -213,7 +213,7 @@ contract SelfRepayingENSTest is Test {
 
         vm.prank(scoopy, scoopy);
 
-        // Unsubscribe to the Self Repaying ENS Renewals service for `name`.
+        // Unsubscribe to the Self Repaying ENS service for `name`.
         // `srens` should emit a {Unubscribed} event.
         vm.expectEmit(true, true, false, false, address(srens));
         emit Unsubscribed(scoopy, name, name);
@@ -225,7 +225,7 @@ contract SelfRepayingENSTest is Test {
         // Act as scoopy, an EOA, for the next call.
         vm.prank(scoopy, scoopy);
 
-        // Try to subscribe with a ENS name that doesn't exists.
+        // Try to subscribe with a ENS name that doesn't exist.
         vm.expectRevert("Ops.cancelTask: Task not found"); // from Gelato Ops.
         srens.unsubscribe("dsadsfsdfdsf");
     }
@@ -362,6 +362,40 @@ contract SelfRepayingENSTest is Test {
         // Try to renew `name` without enough collateral to cover the renew cost.
         vm.expectRevert(abi.encodeWithSignature("Undercollateralized()"));
         srens.renew(name, scoopy);
+    }
+
+    /// @dev Test `Multicall.multicall()` feature happy path.
+    function testMulticall() external {
+        // Act as Scoopy, an EOA. Alchemix checks msg.sender === tx.origin to know if sender is an EOA.
+        vm.startPrank(scoopy, scoopy);
+
+        // Prepare multicall data.
+        bytes[] memory data = new bytes[](3);
+        data[0] = abi.encodeCall(srens.subscribe, (name));
+        data[1] = abi.encodeCall(srens.subscribe, ("alchemix"));
+        data[2] = abi.encodeCall(srens.unsubscribe, (name));
+        // Subscribe to the `srens` service for multiple names and unsubscribe for one.
+        vm.expectEmit(true, true, false, false, address(srens));
+        emit Subscribed(scoopy, name, name);
+        vm.expectEmit(true, true, false, false, address(srens));
+        emit Subscribed(scoopy, "alchemix", name);
+        vm.expectEmit(true, true, false, false, address(srens));
+        emit Unsubscribed(scoopy, name, name);
+        srens.multicall(data);
+    }
+
+    /// @dev Test `Multicall.multicall()` feature reverts the entire transaction on revert.
+    function testMulticallWhenNameDoesNotExist() external {
+        // Act as Scoopy, an EOA. Alchemix checks msg.sender === tx.origin to know if sender is an EOA.
+        vm.startPrank(scoopy, scoopy);
+
+        // Prepare multicall data.
+        bytes[] memory data = new bytes[](2);
+        data[0] = abi.encodeCall(srens.subscribe, ("dsadsfsdfdsf"));
+        data[1] = abi.encodeCall(srens.subscribe, ("alchemix"));
+        // Try to subscribe to the `srens` service for multiple names with one that doesn't exist.
+        vm.expectRevert(SelfRepayingENS.IllegalArgument.selector);
+        srens.multicall(data);
     }
 
     /// @dev Simulate a Gelato Ops call with fees.
