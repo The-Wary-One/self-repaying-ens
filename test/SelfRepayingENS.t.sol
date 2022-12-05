@@ -1,26 +1,18 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.17;
 
-import { Test, console2, stdError } from "forge-std/Test.sol";
-import { FixedPointMathLib } from "solmate/utils/FixedPointMathLib.sol";
-import { WETHGateway } from "alchemix/WETHGateway.sol";
-import { Whitelist } from "alchemix/utils/Whitelist.sol";
-import {
-    SelfRepayingENSStub,
-    SelfRepayingENS,
-    AlchemicTokenV2,
-    LibDataTypes
-} from "./stubs/SelfRepayingENS.sol";
-import { DeploySRENS } from "script/DeploySRENS.s.sol";
-import { ToolboxLocal, Toolbox } from "script/ToolboxLocal.s.sol";
+import {Test, stdError} from "../lib/forge-std/src/Test.sol";
+import {FixedPointMathLib} from "../lib/solmate/src/utils/FixedPointMathLib.sol";
+import {AlchemicTokenV2} from "../lib/alchemix/src/AlchemicTokenV2.sol";
+import {WETHGateway} from "../lib/alchemix/src/WETHGateway.sol";
+import {Whitelist} from "../lib/alchemix/src/utils/Whitelist.sol";
+
+import {SelfRepayingENSStub, SelfRepayingENS, LibDataTypes} from "./stubs/SelfRepayingENS.sol";
+import {DeploySRENS} from "../script/DeploySRENS.s.sol";
+import {ToolboxLocal, Toolbox} from "../script/ToolboxLocal.s.sol";
 
 contract SelfRepayingENSTest is Test {
-
     using FixedPointMathLib for uint256;
-
-    /// @dev Copied from the `SelfRepayingENS` contract.
-    event Subscribed(address indexed subscriber, string indexed indexedName, string name);
-    event Unsubscribed(address indexed subscriber, string indexed indexedName, string name);
 
     /* --- TEST CONFIG --- */
     ToolboxLocal toolbox;
@@ -31,6 +23,12 @@ contract SelfRepayingENSTest is Test {
     address constant ETH = 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE;
     uint256 constant gelatoFee = 0.001 ether;
 
+    /// @dev Copied from the `SelfRepayingENS` contract.
+    event Subscribed(address indexed subscriber, string indexed indexedName, string name);
+    event Unsubscribed(address indexed subscriber, string indexed indexedName, string name);
+    /// @dev ENS `ETHRegistrarController` contract event
+    event NameRenewed(string name, bytes32 indexed label, uint256 cost, uint256 expires);
+
     /// @dev Setup the environment for the tests.
     function setUp() external {
         // Make sure we run the tests on a mainnet fork.
@@ -39,26 +37,13 @@ contract SelfRepayingENSTest is Test {
         vm.createSelectFork(RPC_MAINNET, BLOCK_NUMBER_MAINNET);
         require(block.chainid == 1, "Tests should be run on a mainnet fork");
 
-        // Get the mainnet config.
         toolbox = new ToolboxLocal();
+        // Deploy the AlETHRouter contract first.
+        toolbox.deployTestRouter();
+        // Deploy the SelfRepayingENS contract.
+        srens = toolbox.deployTestSRENS();
+        // Get the mainnet config.
         config = toolbox.getConfig();
-
-        // Deploy the SelfRepayingENS contract using the deployment script.
-        DeploySRENS deployer = new DeploySRENS();
-        srens = deployer.run();
-
-        // The contract should not be ready for use.
-        {
-            (bool isReady1, string memory message1) = toolbox.check(srens);
-            assertFalse(isReady1);
-            assertEq(message1, "Alchemix must whitelist the contract");
-        }
-
-        // Add the `srens` contract address to alETH AlchemistV2's whitelist.
-        Whitelist whitelist = Whitelist(config.alchemist.whitelist());
-        vm.prank(whitelist.owner());
-        whitelist.add(address(srens));
-        assertTrue(whitelist.isWhitelisted(address(srens)));
 
         // The contract is ready to be used.
         (bool isReady, string memory message) = toolbox.check(srens);
@@ -67,7 +52,7 @@ contract SelfRepayingENSTest is Test {
 
         // Give 100 ETH to Scoopy Trooples even if he doesn't need it 🙂.
         vm.label(scoopy, "scoopy");
-        vm.deal(scoopy, 100e18);
+        vm.deal(scoopy, 100 ether);
 
         // Act as Scoopy, an EOA. Alchemix checks msg.sender === tx.origin to know if sender is an EOA.
         vm.startPrank(scoopy, scoopy);
@@ -76,11 +61,7 @@ contract SelfRepayingENSTest is Test {
         address[] memory supportedTokens = config.alchemist.getSupportedYieldTokens();
         // Create an Alchemix account.
         config.wethGateway.depositUnderlying{value: 10 ether}(
-            address(config.alchemist),
-            supportedTokens[0],
-            10 ether,
-            scoopy,
-            1
+            address(config.alchemist), supportedTokens[0], 10 ether, scoopy, 1
         );
 
         // Check `name`'s rent price.
@@ -91,11 +72,7 @@ contract SelfRepayingENSTest is Test {
         // To register a ENS name we must first send a commitment, wait some time then register it.
         // Get the commitment.
         bytes32 secret = keccak256(bytes("SuperSecret"));
-        bytes32 commitment = config.controller.makeCommitment(
-            name,
-            scoopy,
-            secret
-        );
+        bytes32 commitment = config.controller.makeCommitment(name, scoopy, secret);
         // Submit the commitment to the `ETHRegistrarController`.
         config.controller.commit(commitment);
         // Wait the waiting period.
@@ -103,28 +80,22 @@ contract SelfRepayingENSTest is Test {
         // Register `name` for `namePrice` and `registrationDuration`.
         // ENS recommend sending at least a 5% premium to cover the price fluctuations. They send the leftover ETH back.
         uint256 namePriceWithPremium = namePrice * 105 / 100;
-        config.controller.register{value: namePriceWithPremium}(
-            name,
-            scoopy,
-            registrationDuration,
-            secret
-        );
+        config.controller.register{value: namePriceWithPremium}(name, scoopy, registrationDuration, secret);
 
         vm.stopPrank();
     }
 
-    /// @dev ENS `ETHRegistrarController` contract event
-    event NameRenewed(string name, bytes32 indexed label, uint cost, uint expires);
-
-    /// @dev Test the happy path of the entire Alchemix + SelfRepayingENS + ENS + Gelato integration.
+    /// @dev Test the happy path of the entire Alchemix + AlETHRouter + SelfRepayingENS + ENS + Gelato integration.
     ///
     /// @dev **_NOTE:_** It is pretty difficult to perfectly test complex protocols locally when they rely on bots as they usually don't give integrators test mocks.
     /// @dev **_NOTE:_** In the following tests we won't care about Alchemix/Yearn bots and we manually simulate Gelato's.
     function testFullIntegration() external {
         // Act as scoopy, an EOA.
         vm.startPrank(scoopy, scoopy);
-        // Scoopy, the subscriber, needs to allow `srens` to mint enough alETH debt token to pay for the renewal.
-        config.alchemist.approveMint(address(srens), type(uint256).max);
+        // Scoopy, the subscriber, needs to allow `router` to mint enough alETH debt token to pay for the renewal.
+        config.alchemist.approveMint(address(config.router), type(uint256).max);
+        // Scoopy, the subscriber, needs to allow `srens` to use the `router`.
+        config.router.approve(address(srens), type(uint256).max);
 
         // Subscribe to the Self Repaying ENS Renewals service for `name`.
         // `srens` should emit a {Subscribed} event.
@@ -154,12 +125,9 @@ contract SelfRepayingENSTest is Test {
         // `srens` checker function should tell Gelato to execute the task by return true and the its payload.
         (bool canExec, bytes memory execPayload) = srens.checker(name, scoopy);
         assertTrue(canExec);
-        assertEq(execPayload, abi.encodeCall(
-            srens.renew,
-            (name, scoopy)
-        ));
+        assertEq(execPayload, abi.encodeCall(srens.renew, (name, scoopy)));
 
-        (int256 previousDebt, ) = config.alchemist.accounts(scoopy);
+        (int256 previousDebt,) = config.alchemist.accounts(scoopy);
         uint256 namePrice = config.controller.rentPrice(name, srens.renewalDuration());
 
         // Gelato now execute the defined task.
@@ -169,14 +137,8 @@ contract SelfRepayingENSTest is Test {
         execRenewTask(gelatoFee, name, scoopy);
 
         // Check `name`'s renewal increased `scoopy`'s Alchemix debt.
-        (int256 newDebt, ) = config.alchemist.accounts(scoopy);
+        (int256 newDebt,) = config.alchemist.accounts(scoopy);
         assertTrue(newDebt >= previousDebt + int256(namePrice + gelatoFee));
-    }
-
-    /// @dev Test `srens` approved the `alETHPool` to transfer an (almost) unlimited amount of `alETH` tokens.
-    function testAlETHPoolIsApprovedAtDeployment() external {
-        AlchemicTokenV2 alETH = AlchemicTokenV2(config.alchemist.debtToken());
-        assertEq(alETH.allowance(address(srens), address(config.alETHPool)), type(uint256).max);
     }
 
     /// @dev Test `srens.subscribe()`'s happy path.
@@ -282,10 +244,7 @@ contract SelfRepayingENSTest is Test {
         // `srens` checker function should tell Gelato to execute the task by return true and the its payload.
         (bool canExec, bytes memory execPayload) = srens.checker(name, scoopy);
         assertTrue(canExec);
-        assertEq(execPayload, abi.encodeCall(
-            srens.renew,
-            (name, scoopy)
-        ));
+        assertEq(execPayload, abi.encodeCall(srens.renew, (name, scoopy)));
     }
 
     /// @dev Test `srens.checker()`'s returns false when the base fee is too high.
@@ -307,9 +266,7 @@ contract SelfRepayingENSTest is Test {
     /// @dev Test the internal function `srens._getVariableMaxBaseFee()` returns the correct base fee limit.
     function testVariableMaxRenewBaseFee() external {
         SelfRepayingENSStub stub = new SelfRepayingENSStub(
-            config.alchemist,
-            config.alETHPool,
-            config.curveCalc,
+            config.router,
             config.controller,
             config.registrar,
             config.gelatoOps
@@ -367,8 +324,10 @@ contract SelfRepayingENSTest is Test {
         // Act as Scoopy, an EOA.
         vm.prank(scoopy, scoopy);
 
-        // Allow `srens` to mint debt but not enough to renew `name`.
-        config.alchemist.approveMint(address(srens), 1);
+        // Allow `router` to mint debt but not enough to renew `name`.
+        config.alchemist.approveMint(address(config.router), 1);
+        // Scoopy, the subscriber, needs to allow `srens` to use the `router`.
+        config.router.approve(address(srens), 1);
 
         // Act as a Gelato Ops
         vm.prank(address(config.gelatoOps));
@@ -390,8 +349,10 @@ contract SelfRepayingENSTest is Test {
         // Mint all of `scoopy`'s possible debt.
         config.alchemist.mint(totalValue.divWadDown(config.alchemist.minimumCollateralization()), scoopy);
 
-        // Allow `srens` to mint debt.
-        config.alchemist.approveMint(address(srens), type(uint256).max);
+        // Scoopy, the subscriber, needs to allow `router` to mint enough alETH debt token to pay for the renewal.
+        config.alchemist.approveMint(address(config.router), type(uint256).max);
+        // Scoopy, the subscriber, needs to allow `srens` to use the `router`.
+        config.router.approve(address(srens), type(uint256).max);
 
         vm.stopPrank();
 

@@ -1,40 +1,37 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.17;
 
-import { Script, stdJson, console2 } from "forge-std/Script.sol";
-import { WETHGateway } from "alchemix/WETHGateway.sol";
-import { Whitelist } from "alchemix/utils/Whitelist.sol";
+import {Script, stdJson} from "../lib/forge-std/src/Script.sol";
+import {WETHGateway} from "../lib/alchemix/src/WETHGateway.sol";
+import {Whitelist} from "../lib/alchemix/src/utils/Whitelist.sol";
+import {AlETHRouter, IAlchemistV2, ICurvePool, ICurveCalc} from "../lib/aleth-router/src/AlETHRouter.sol";
+
 import {
     SelfRepayingENS,
-    IAlchemistV2,
-    AlchemicTokenV2,
+    AlETHRouter,
     ETHRegistrarController,
     BaseRegistrarImplementation,
-    ICurveAlETHPool,
-    ICurveCalc,
     Ops
-} from "src/SelfRepayingENS.sol";
+} from "../src/SelfRepayingENS.sol";
 
 contract Toolbox is Script {
-
     using stdJson for string;
 
     // We must follow the alphabetical order of the json file.
     struct Config {
         IAlchemistV2 alchemist;
-        ICurveAlETHPool alETHPool;
+        WETHGateway wethGateway;
+        ICurvePool alETHPool;
         ICurveCalc curveCalc;
+        AlETHRouter router;
         ETHRegistrarController controller;
         BaseRegistrarImplementation registrar;
         Ops gelatoOps;
-        WETHGateway wethGateway;
         address gelato;
     }
 
     SelfRepayingENS private _srens;
-    Config private _config;
-
-    event log_named_address(string key, address val);
+    Config internal _config;
 
     /// @dev Check the last contract deployment on the target chain.
     function getLastSRENSDeployment() public returns (SelfRepayingENS) {
@@ -44,12 +41,8 @@ contract Toolbox is Script {
         }
         // Get the last deployment address on this chain.
         string memory root = vm.projectRoot();
-        string memory path = string.concat(
-            root,
-            "/broadcast/DeploySRENS.s.sol/",
-            vm.toString(block.chainid),
-            "/run-latest.json"
-        );
+        string memory path =
+            string.concat(root, "/broadcast/DeploySRENS.s.sol/", vm.toString(block.chainid), "/run-latest.json");
         // Will throw if the file is missing.
         string memory json = vm.readFile(path);
         // Get the value at `contractAddress` of a `CREATE` transaction.
@@ -73,7 +66,7 @@ contract Toolbox is Script {
 
         // Get the deployed contracts addresses from the json config file.
         string memory root = vm.projectRoot();
-        string memory path = string.concat(root, "/deployments/externals.json");
+        string memory path = string.concat(root, "/deployments/external.json");
         string memory json = vm.readFile(path);
         // Will panic if the network config is missing.
         bytes memory raw = json.parseRaw(string.concat("chainId.", vm.toString(block.chainid)));
@@ -99,10 +92,10 @@ contract Toolbox is Script {
 
         // Get the chain config.
         Config memory config = getConfig();
-        // Check if `srens` is whitelisted by Alchemix's AlchemistV2 alETH contract.
+        // Check if `router` is whitelisted by Alchemix's AlchemistV2 alETH contract.
         Whitelist whitelist = Whitelist(config.alchemist.whitelist());
-        if (!whitelist.isWhitelisted(address(srens))) {
-            return (false, "Alchemix must whitelist the contract");
+        if (!whitelist.isWhitelisted(address(config.router))) {
+            return (false, "Alchemix must whitelist the router contract");
         }
 
         // All checks passed.
@@ -123,16 +116,17 @@ contract Toolbox is Script {
         srens.subscribe(name);
     }
 
-    /// @dev Approve the last deployed srens contract to mint alETH debt.
-    function approveMint() external {
+    /// @dev Approve the last deployed router contract to mint alETH debt and the last deployed srens contract to use the router.
+    function approve() external {
         // Get the config.
         Config memory config = getConfig();
         // Get the last deployment address on this chain.
         SelfRepayingENS srens = getLastSRENSDeployment();
 
-        // Approve srens to mint debt.
-        vm.broadcast();
-        config.alchemist.approveMint(address(srens), type(uint256).max);
+        // Approve router to mint debt.
+        vm.startBroadcast();
+        config.alchemist.approveMint(address(config.router), type(uint256).max);
+        config.router.approve(address(srens), type(uint256).max);
     }
 
     /// @dev Create an Alchemix account.
@@ -145,11 +139,7 @@ contract Toolbox is Script {
         // Create an Alchemix account.
         vm.broadcast();
         config.wethGateway.depositUnderlying{value: 10 ether}(
-            address(config.alchemist),
-            supportedTokens[0],
-            10 ether,
-            msg.sender,
-            1
+            address(config.alchemist), supportedTokens[0], 10 ether, msg.sender, 1
         );
     }
 
@@ -159,11 +149,8 @@ contract Toolbox is Script {
         Config memory config = getConfig();
 
         // Generate commitment.
-        bytes32 commitment = config.controller.makeCommitment(
-            name,
-            msg.sender,
-            keccak256(abi.encodePacked(name, msg.sender))
-        );
+        bytes32 commitment =
+            config.controller.makeCommitment(name, msg.sender, keccak256(abi.encodePacked(name, msg.sender)));
 
         // Commit the commitment to commit to register the name. We love to commit even if our ex doesn't agree.
         vm.broadcast();
@@ -180,10 +167,7 @@ contract Toolbox is Script {
         // Register name for 1 year.
         vm.broadcast();
         config.controller.register{value: 0.1 ether}(
-            name,
-            msg.sender,
-            365 days,
-            keccak256(abi.encodePacked(name, msg.sender))
+            name, msg.sender, 365 days, keccak256(abi.encodePacked(name, msg.sender))
         );
     }
 }

@@ -1,9 +1,6 @@
 [submodule "lib/forge-std"]
 	path = lib/forge-std
 	url = https://github.com/foundry-rs/forge-std
-[submodule "lib/v2-foundry"]
-	path = lib/v2-foundry
-	url = https://github.com/alchemix-finance/v2-foundry
 [submodule "lib/ens-contracts"]
 	path = lib/ens-contracts
 	url = https://github.com/ensdomains/ens-contracts
@@ -14,3 +11,9 @@
 	path = lib/solmate
 	url = https://github.com/transmissions11/solmate
 	branch = main
+[submodule "lib/alchemix"]
+	path = lib/alchemix
+	url = https://github.com/alchemix-finance/v2-foundry
+[submodule "lib/aleth-router"]
+	path = lib/aleth-router
+	url = https://github.com/The-Wary-One/aleth-router

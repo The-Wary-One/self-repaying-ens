@@ -1,45 +1,34 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.17;
 
-import { toDaysWadUnsafe, wadExp, wadDiv } from "solmate/utils/SignedWadMath.sol";
-import { IAlchemistV2 } from "alchemix/interfaces/IAlchemistV2.sol";
-import { AlchemicTokenV2 } from "alchemix/AlchemicTokenV2.sol";
-import { ETHRegistrarController, BaseRegistrarImplementation } from "ens/ethregistrar/ETHRegistrarController.sol";
-import { Ops, LibDataTypes } from "gelato/Ops.sol";
-
-import { ICurveAlETHPool } from "./interfaces/ICurveAlETHPool.sol";
-import { ICurveCalc } from "./interfaces/ICurveCalc.sol";
+import {toDaysWadUnsafe, wadExp, wadDiv} from "../lib/solmate/src/utils/SignedWadMath.sol";
+import {AlETHRouter} from "../lib/aleth-router/src/AlETHRouter.sol";
+import {
+    ETHRegistrarController,
+    BaseRegistrarImplementation
+} from "../lib/ens-contracts/contracts/ethregistrar/ETHRegistrarController.sol";
+import {Ops, LibDataTypes} from "../lib/ops/contracts/Ops.sol";
 
 /// @title SelfRepayingENS
 /// @author Wary
 contract SelfRepayingENS {
-
     /// @notice The ENS name renewal duration in seconds.
-    uint256 constant public renewalDuration = 365 days;
+    uint256 public constant renewalDuration = 365 days;
 
-    /// @notice The Alchemix alETH alchemistV2 contract.
-    IAlchemistV2 immutable public alchemist;
-
-    /// @notice The Alchemix alETH AlchemicTokenV2 contract.
-    AlchemicTokenV2 immutable public alETH;
-
-    /// @notice The alETH + ETH Curve Pool contract.
-    ICurveAlETHPool immutable public alETHPool;
-
-    /// @notice The CurveCalc contract.
-    ICurveCalc immutable public curveCalc;
+    /// @notice The Alchemix alETH router contract.
+    AlETHRouter public immutable router;
 
     /// @notice The ENS ETHRegistrarController (i.e. .eth controller) contract.
-    ETHRegistrarController immutable public controller;
+    ETHRegistrarController public immutable controller;
 
     /// @notice The ENS BaseRegistrarImplementation (i.e. .eth registrar) contract.
-    BaseRegistrarImplementation immutable public registrar;
+    BaseRegistrarImplementation public immutable registrar;
 
     /// @notice The Gelato contract.
-    address payable immutable public gelato;
+    address payable public immutable gelato;
 
     /// @notice The Gelato Ops contract.
-    Ops immutable public gelatoOps;
+    Ops public immutable gelatoOps;
 
     /// @notice The Gelato address for ETH.
     address constant ETH = 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE;
@@ -74,25 +63,17 @@ contract SelfRepayingENS {
     ///
     /// @dev We annotate it payable to make it cheaper. Do not send ETH.
     constructor(
-        IAlchemistV2 _alchemist,
-        ICurveAlETHPool _alETHPool,
-        ICurveCalc _curveCalc,
+        AlETHRouter _router,
         ETHRegistrarController _controller,
         BaseRegistrarImplementation _registrar,
         Ops _gelatoOps
     ) payable {
-        alchemist = _alchemist;
-        alETHPool = _alETHPool;
-        curveCalc = _curveCalc;
+        router = _router;
         controller = _controller;
         registrar = _registrar;
         gelatoOps = _gelatoOps;
 
-        alETH = AlchemicTokenV2(alchemist.debtToken());
         gelato = _gelatoOps.gelato();
-
-        // Approve the `alETHPool` Curve Pool to transfer an (almost) unlimited amount of `alETH` tokens.
-        alETH.approve(address(_alETHPool), type(uint256).max);
     }
 
     /// @notice Subscribe to the self repaying ENS renewals service for `name`.
@@ -100,10 +81,9 @@ contract SelfRepayingENS {
     /// @dev It creates a Gelato task to monitor `name`'s expiry. Fees are paid on task execution.
     ///
     /// @notice `name` must exist or this call will revert an {IllegalArgument} error.
-    ///
     /// @notice Emits a {Subscribed} event.
     ///
-    /// @notice **_NOTE:_** The `SelfRepayingENS` contract must have enough `AlchemistV2.mintAllowance()` to renew `name`. The can be done via the `AlchemistV2.approveMint()` method.
+    /// @notice **_NOTE:_** The `SelfRepayingENS` contract must have enough `AlETHRouter.allowance()` to renew `name`. The can be done via the `AlETHRouter.approve()` method.
     /// @notice **_NOTE:_** The `msg.sender` must make sure they have enough `AlchemistV2.totalValue()` to cover `name` renewal fee.
     ///
     /// @param name The ENS name to monitor and renew.
@@ -120,10 +100,7 @@ contract SelfRepayingENS {
         // Create a gelato task to monitor `name`'s expiry and renew it.
         // We choose to pay Gelato when executing the task.
         task = gelatoOps.createTask(
-            address(this),
-            abi.encode(this.renew.selector),
-            _getResolveModuleData(msg.sender, name),
-            ETH
+            address(this), abi.encode(this.renew.selector), _getResolveModuleData(msg.sender, name), ETH
         );
 
         emit Subscribed(msg.sender, name, name);
@@ -159,7 +136,11 @@ contract SelfRepayingENS {
     /// @dev It tells Gelato when to execute the task (i.e. when it is true).
     /// @return execPayload The abi encoded call to execute.
     /// @dev It tells Gelato how to execute the task. We use this view function to prepare all the possible data for free and make the renewal cheaper.
-    function checker(string memory name, address subscriber) external view returns (bool canExec, bytes memory execPayload) {
+    function checker(string memory name, address subscriber)
+        external
+        view
+        returns (bool canExec, bytes memory execPayload)
+    {
         unchecked {
             // Check `name` expiry.
             // Try to limit the renew transaction base fee which means limiting the gelato fee.
@@ -170,18 +151,14 @@ contract SelfRepayingENS {
             }
 
             // Return the Gelato task payload to execute. It must call `this.renew(name, subscriber)`.
-            return (true, abi.encodeCall(
-                this.renew,
-                (name, subscriber)
-            ));
+            return (true, abi.encodeCall(this.renew, (name, subscriber)));
         }
     }
 
     /// @notice Renew `name` by minting new debt from `subscriber`'s Alchemix account.
     ///
     /// @notice **_NOTE:_** This function can only be called by a Gelato Executor.
-    ///
-    /// @notice **_NOTE:_** When renewing, the `SelfRepayingENS` contract must have **mintAllowance()** to mint new alETH debt tokens on behalf of **subscriber** to cover **name** renewal and the Gelato fee costs. This can be done via the `AlchemistV2.approveMint()` method.
+    /// @notice **_NOTE:_** When renewing, the `AlETHRouter` and the `SelfRepayingENS` contracts must have **allowance()** to mint new alETH debt tokens on behalf of **subscriber** to cover **name** renewal and the Gelato fee costs. This can be done via the `AlchemistV2.approveMint()` and `AlETHRouter.approve()` methods.
     ///
     /// @dev We annotate it payable to make it cheaper. Do not send ETH.
     ///
@@ -197,29 +174,18 @@ contract SelfRepayingENS {
             // Get `name` rent price.
             uint256 namePrice = controller.rentPrice(name, renewalDuration);
             // Get the gelato fee in ETH.
-            (uint256 gelatoFee, ) = gelatoOps.getFeeDetails();
+            (uint256 gelatoFee,) = gelatoOps.getFeeDetails();
             // The amount of ETH needed to pay the ENS renewal using Gelato.
             uint256 neededETH = namePrice + gelatoFee;
 
-            // ⚠️ Curve alETH-ETH pool, the biggest alETH pool, makes it difficult and expensive to get an EXACT ETH amount back so we must use `curveCalc.get_dx()` outside of a transaction.
-            // Get the EXACT amount of debt (i.e. alETH) to mint from the Curve Pool by asking the CurveCalc contract.
-            uint256 alETHToMint = _getAlETHToMint(neededETH);
-
-            // Mint `alETHToMint` of alETH (i.e. debt token) from `subscriber`'s Alchemix account.
-            alchemist.mintFrom(subscriber, alETHToMint, address(this));
-            // Execute a Curve Pool exchange for `alETHToMint` amount of alETH tokens to at least `needETH` ETH.
-            alETHPool.exchange(
-                1, // alETH
-                0, // ETH
-                alETHToMint,
-                neededETH
-            );
+            // Borrow `neededETH` amount of ETH from `subscriber` Alchemix account.
+            router.borrowAndSendETHFrom(subscriber, address(this), neededETH);
 
             // Renew `name` for its expiry data + `renewalDuration` first.
             controller.renew{value: namePrice}(name, renewalDuration);
 
             // Pay the Gelato executor with all the ETH left. No ETH will be stuck in this contract.
-            (bool success, ) = gelato.call{value: address(this).balance}("");
+            (bool success,) = gelato.call{value: address(this).balance}("");
             if (!success) revert FailedTransfer();
         }
     }
@@ -239,49 +205,22 @@ contract SelfRepayingENS {
     /// @param subscriber The address of the subscriber.
     function getTaskId(address subscriber, string memory name) public view returns (bytes32) {
         LibDataTypes.ModuleData memory moduleData = _getResolveModuleData(subscriber, name);
-        return gelatoOps.getTaskId(
-            address(this),
-            address(this),
-            this.renew.selector,
-            moduleData,
-            ETH
-        );
+        return gelatoOps.getTaskId(address(this), address(this), this.renew.selector, moduleData, ETH);
     }
 
     /// @dev Helper function to get the Gelato resolve module data.
-    function _getResolveModuleData(address subscriber, string memory name) internal view returns (LibDataTypes.ModuleData memory) {
-        bytes32 resolverHash = keccak256(abi.encode(
-            address(this),
-            abi.encodeCall(this.checker, (name, subscriber))
-        ));
+    function _getResolveModuleData(address subscriber, string memory name)
+        internal
+        view
+        returns (LibDataTypes.ModuleData memory)
+    {
+        bytes32 resolverHash = keccak256(abi.encode(address(this), abi.encodeCall(this.checker, (name, subscriber))));
 
         LibDataTypes.Module[] memory modules = new LibDataTypes.Module[](1);
         modules[0] = LibDataTypes.Module.RESOLVER;
         bytes[] memory args = new bytes[](1);
         args[0] = abi.encode(resolverHash);
-        return LibDataTypes.ModuleData({ modules: modules, args: args });
-    }
-
-    /// @dev Get the current alETH amount to get `neededETH` ETH amount back in from a Curve Pool exchange.
-    ///
-    /// @param neededETH The ETH amount to get back from the Curve alETH exchange.
-    /// @return The exact alETH amount to swap to get `neededETH` ETH back form a Curve exchange.
-    function _getAlETHToMint(uint256 neededETH) internal view returns (uint256) {
-        unchecked {
-            uint256[2] memory b = alETHPool.get_balances();
-            return curveCalc.get_dx(
-                2,
-                [b[0], b[1], 0, 0, 0, 0, 0, 0],
-                alETHPool.A(),
-                alETHPool.fee(),
-                [uint256(1e18), 1e18, 0, 0, 0, 0, 0, 0],
-                [uint256(1), 1, 0, 0, 0, 0, 0, 0],
-                false,
-                1, // alETH
-                0, // ETH
-                neededETH + 1 // Because of Curve rounding errors
-            );
-        }
+        return LibDataTypes.ModuleData({modules: modules, args: args});
     }
 
     /// @dev Get the variable maximum base fee for this expired name.
@@ -327,7 +266,7 @@ contract SelfRepayingENS {
 
     /// @notice To receive ETH payments.
     ///
-    /// @dev To receive ETH from alETHPool.exchange().
+    /// @dev To receive ETH from AlETHRouter.borrowAndSendETH().
     /// @dev All other received ETH will be sent to the next Gelato executor.
     receive() external payable {}
 }

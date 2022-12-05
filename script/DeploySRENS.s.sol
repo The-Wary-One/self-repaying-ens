@@ -1,31 +1,43 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.17;
 
-import { Script } from "forge-std/Script.sol";
-import { SelfRepayingENS } from "src/SelfRepayingENS.sol";
-import { Toolbox } from "script/Toolbox.s.sol";
+import {Script} from "../lib/forge-std/src/Script.sol";
+
+import {
+    SelfRepayingENS,
+    AlETHRouter,
+    ETHRegistrarController,
+    BaseRegistrarImplementation,
+    Ops
+} from "../src/SelfRepayingENS.sol";
+import {Toolbox} from "./Toolbox.s.sol";
 
 contract DeploySRENS is Script {
-
     /// @dev Deploy the contract on the target chain.
     function run() external returns (SelfRepayingENS) {
         // Get the config.
         Toolbox toolbox = new Toolbox();
         Toolbox.Config memory config = toolbox.getConfig();
 
-        vm.startBroadcast();
+        // Deploy the contract.
+        return deploy(config.router, config.controller, config.registrar, config.gelatoOps);
+    }
 
+    /// @dev Deploy the contract.
+    function deploy(
+        AlETHRouter router,
+        ETHRegistrarController controller,
+        BaseRegistrarImplementation registrar,
+        Ops gelatoOps
+    ) public returns (SelfRepayingENS) {
         // Deploy the SRENS contract.
+        vmSafe.broadcast();
         SelfRepayingENS srens = new SelfRepayingENS(
-            config.alchemist,
-            config.alETHPool,
-            config.curveCalc,
-            config.controller,
-            config.registrar,
-            config.gelatoOps
+            router,
+            controller,
+            registrar,
+            gelatoOps
         );
-
-        vm.stopBroadcast();
 
         return srens;
     }

@@ -1,0 +1,15 @@
+{
+    "chainId": {
+        "1": {
+            "01-alchemist": "0x062Bf725dC4cDF947aa79Ca2aaCCD4F385b13b5c",
+            "02-wethGateway": "0xA22a7ec2d82A471B1DAcC4B37345Cf428E76D67A",
+            "03-alETHPool": "0xC4C319E2D4d66CcA4464C0c2B32c9Bd23ebe784e",
+            "04-curveCalc": "0xc1DB00a8E5Ef7bfa476395cdbcc98235477cDE4E",
+            "05-router": "0x0000000000000000000000000000000000000000",
+            "06-controller": "0x283Af0B28c62C092C9727F1Ee09c02CA627EB7F5",
+            "07-registrar": "0x57f1887a8BF19b14fC0dF6Fd9B2acc9Af147eA85",
+            "08-gelatoOps": "0xB3f5503f93d5Ef84b06993a1975B9D21B962892F",
+            "09-gelato": "0x3CACa7b48D0573D793d3b0279b5F0029180E83b6"
+        }
+    }
+}

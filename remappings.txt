@@ -4,9 +4,11 @@ solmate/=lib/solmate/src/
 
 ens/=lib/ens-contracts/contracts/
 
-alchemix/=lib/v2-foundry/src/
-openzeppelin-contracts-upgradeable/=lib/v2-foundry/lib/openzeppelin-contracts-upgradeable/
-openzeppelin-contracts/=lib/v2-foundry/lib/openzeppelin-contracts/contracts/
-@openzeppelin/contracts/=lib/v2-foundry/lib/openzeppelin-contracts/contracts/
+alchemix/=lib/alchemix/src/
+openzeppelin-contracts-upgradeable/=lib/alchemix/lib/openzeppelin-contracts-upgradeable/
+openzeppelin-contracts/=lib/alchemix/lib/openzeppelin-contracts/contracts/
+@openzeppelin/contracts/=lib/alchemix/lib/openzeppelin-contracts/contracts/
 
 gelato/=lib/ops/contracts/
+
+router/=lib/aleth-router/src/

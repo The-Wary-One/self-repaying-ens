@@ -15,10 +15,6 @@ fi
 echo "🚀 Deploy the SelfRepayingENS contract..."
 ./tasks/deploy-srens-local.sh > /dev/null
 
-# Whitelist SRENS
-echo "📝 Add srens to alchemist's whitelist..."
-./tasks/whitelist-srens-local.sh > /dev/null
-
 # Register a ENS name
 echo "💵 Register the \"self-repaying\" .eth name..."
 ./tasks/register-name-local.sh "self-repaying" > /dev/null

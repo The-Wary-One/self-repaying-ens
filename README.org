@@ -1,13 +1,14 @@
 #+title: Self Repaying ENS
 #+author: Wary
 
-An Alchemix user can subscribe to the Self Repaying ENS Renewals service to automatically renew an expired ENS name. The renewal fee is paid by adding some self repaying debt to the user Alchemix account 🧙🪄💸. It was made for [[https://gitcoin.co/hackathon/moneylegos][Gitcoin's Money Legos Hackaton]].
+An Alchemix user can subscribe to the Self Repaying ENS service to automatically renew an expired ENS name. The renewal fee is paid by adding some self repaying debt to the user Alchemix account 🧙🪄💸. It was made for [[https://gitcoin.co/hackathon/moneylegos][Gitcoin's Money Legos Hackaton]].
 
 
 * 🌍 Overview
 
-The Self Repaying ENS Renewals is a smart contract written in Solidity that uses:
+The Self Repaying ENS is a smart contract written in Solidity that uses:
 - the [[https://alchemix.fi/][Alchemix Protocol]] to manage users self repaying debt
+- the [[https://curve.fi][Curve Protocol]] to exchange alETH and ETH
 - the [[https://ens.domains/][Ethereum Name System]] to manage the ENS names
 - the [[https://www.gelato.network/][Gelato Network]] to automate the smart contract actions
 
@@ -18,8 +19,9 @@ The Self Repaying ENS Renewals is a smart contract written in Solidity that uses
 - Register a ENS name
 - Deposit enough funds to the =alETH= AlchemistV2 contract
 
-1. Allow the =SelfRepayingENS= contract (aka SRENS) to mint enough =alETH= debt to cover multiple renewals
-2. Subscribe to the =SRENS= service for this name
+1. Allow the =AlETHRouter= contract to mint enough =alETH= debt to cover multiple renewals
+2. Allow the =SelfRepayingENS= contract (aka =SRENS=) to use the =AlETHRouter= contract on your behalf
+3. Subscribe to the =SRENS= service for this name
 
 Voila ! 🥳
 That's it for the user actions.

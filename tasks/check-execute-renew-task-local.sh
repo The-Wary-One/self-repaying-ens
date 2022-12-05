@@ -61,7 +61,7 @@ moduleData=$(forge script script/ToolboxLocal.s.sol:ToolboxLocal \
     --private-key "0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d" \
     -s "getResolveData(address,string,address)" "$address" "$name" "$subscriber" \
     --silent \
-    --json | jq -rc '.returns."0".value')
+    --json | jq -rc '.returns."0".value' | tr -d "[:space:]")
 
 estimated=$(cast estimate 0xB3f5503f93d5Ef84b06993a1975B9D21B962892F \
     --from 0x3CACa7b48D0573D793d3b0279b5F0029180E83b6 \

@@ -4,6 +4,6 @@ out = 'out'
 libs = ['lib']
 
 fs_permissions = [
-    { access = "read", path = "./deployments/externals.json" },
+    { access = "read", path = "./deployments/external.json" },
     { access = "read", path = "./broadcast/" }
 ]

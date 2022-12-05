@@ -5,22 +5,12 @@ import "src/SelfRepayingENS.sol";
 
 /// @dev This indirection allows us to expose internal functions.
 contract SelfRepayingENSStub is SelfRepayingENS {
-
     constructor(
-        IAlchemistV2 _alchemist,
-        ICurveAlETHPool _alETHPool,
-        ICurveCalc _curveCalc,
+        AlETHRouter _router,
         ETHRegistrarController _controller,
         BaseRegistrarImplementation _registrar,
         Ops _gelatoOps
-    ) SelfRepayingENS(
-            _alchemist,
-            _alETHPool,
-            _curveCalc,
-            _controller,
-            _registrar,
-            _gelatoOps
-    ) {}
+    ) SelfRepayingENS(_router, _controller, _registrar, _gelatoOps) {}
 
     /* --- EXPOSED INTERNAL FUNCTIONS --- */
 
