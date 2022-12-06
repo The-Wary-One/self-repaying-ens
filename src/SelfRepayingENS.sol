@@ -40,7 +40,7 @@ contract SelfRepayingENS is Multicall {
     /// @param indexedName The ENS name to renew.
     /// @param name The ENS name to renew.
     /// @dev We also expose the non indexed name for consumers (e.g. UI).
-    event Subscribed(address indexed subscriber, string indexed indexedName, string name);
+    event Subscribe(address indexed subscriber, string indexed indexedName, string name);
 
     /// @notice An event which is emitted when a user unsubscribe to the self repaying ENS name renewal service.
     ///
@@ -49,7 +49,7 @@ contract SelfRepayingENS is Multicall {
     /// @param name The ENS name to not renew anymore.
     /// @dev We also expose the non i
     /// ndexed name for consumers.
-    event Unsubscribed(address indexed subscriber, string indexed indexedName, string name);
+    event Unsubscribe(address indexed subscriber, string indexed indexedName, string name);
 
     /// @notice An error used to indicate that an action could not be completed because of an illegal argument was passed to the function.
     error IllegalArgument();
@@ -92,8 +92,8 @@ contract SelfRepayingENS is Multicall {
     /// @dev We return the generated task id to simplify the `this.getTaskId()` Solidity test.
     function subscribe(string memory name) external returns (bytes32 task) {
         // Check `name` exists and is within its grace period if expired.
-        // The ENS grace period is 90 days but we chose to have a 1 day margin.
-        if (registrar.nameExpires(uint256(keccak256(bytes(name)))) + 89 days < block.timestamp) {
+        // The ENS grace period is 90 days.
+        if (registrar.nameExpires(uint256(keccak256(bytes(name)))) + 90 days < block.timestamp) {
             // The name needs to be registered not renewed.
             revert IllegalArgument();
         }
@@ -104,7 +104,7 @@ contract SelfRepayingENS is Multicall {
             address(this), abi.encode(this.renew.selector), _getResolveModuleData(msg.sender, name), ETH
         );
 
-        emit Subscribed(msg.sender, name, name);
+        emit Subscribe(msg.sender, name, name);
     }
 
     /// @notice Unsubscribe to the self repaying ENS renewals service for `name`.
@@ -123,7 +123,7 @@ contract SelfRepayingENS is Multicall {
         // Cancel the Gelato task if it exists or reverts.
         gelatoOps.cancelTask(taskId);
 
-        emit Unsubscribed(msg.sender, name, name);
+        emit Unsubscribe(msg.sender, name, name);
     }
 
     /// @notice Check if `name` should be renewed.

@@ -24,8 +24,8 @@ contract SelfRepayingENSTest is Test {
     uint256 constant gelatoFee = 0.001 ether;
 
     /// @dev Copied from the `SelfRepayingENS` contract.
-    event Subscribed(address indexed subscriber, string indexed indexedName, string name);
-    event Unsubscribed(address indexed subscriber, string indexed indexedName, string name);
+    event Subscribe(address indexed subscriber, string indexed indexedName, string name);
+    event Unsubscribe(address indexed subscriber, string indexed indexedName, string name);
     /// @dev ENS `ETHRegistrarController` contract event
     event NameRenewed(string name, bytes32 indexed label, uint256 cost, uint256 expires);
 
@@ -85,62 +85,6 @@ contract SelfRepayingENSTest is Test {
         vm.stopPrank();
     }
 
-    /// @dev Test the happy path of the entire Alchemix + AlETHRouter + SelfRepayingENS + ENS + Gelato integration.
-    ///
-    /// @dev **_NOTE:_** It is pretty difficult to perfectly test complex protocols locally when they rely on bots as they usually don't give integrators test mocks.
-    /// @dev **_NOTE:_** In the following tests we won't care about Alchemix/Yearn bots and we manually simulate Gelato's.
-    function testFullIntegration() external {
-        // Act as scoopy, an EOA.
-        vm.startPrank(scoopy, scoopy);
-        // Scoopy, the subscriber, needs to allow `router` to mint enough alETH debt token to pay for the renewal.
-        config.alchemist.approveMint(address(config.router), type(uint256).max);
-        // Scoopy, the subscriber, needs to allow `srens` to use the `router`.
-        config.router.approve(address(srens), type(uint256).max);
-
-        // Subscribe to the Self Repaying ENS service for `name`.
-        // `srens` should emit a {Subscribed} event.
-        vm.expectEmit(true, true, false, false, address(srens));
-        emit Subscribed(scoopy, name, name);
-        srens.subscribe(name);
-
-        vm.stopPrank();
-
-        // Warp to some time before `name` expiry date.
-        bytes32 labelHash = keccak256(bytes(name));
-        uint256 expiresAt = config.registrar.nameExpires(uint256(labelHash));
-        vm.warp(expiresAt - 90 days);
-
-        // `srens` checker function should return false if base fee is too high to renew.
-        {
-            (bool canExec1, bytes memory execPayload1) = srens.checker(name, scoopy);
-            assertFalse(canExec1);
-            assertEq(execPayload1, bytes("Base fee too high"));
-        }
-
-        // Wait for `name` to be in its renew period.
-        vm.warp(expiresAt - 10 days);
-        // Set the base fee below the max base fee allowed to renew.
-        vm.fee(80 gwei);
-
-        // `srens` checker function should tell Gelato to execute the task by return true and the its payload.
-        (bool canExec, bytes memory execPayload) = srens.checker(name, scoopy);
-        assertTrue(canExec);
-        assertEq(execPayload, abi.encodeCall(srens.renew, (name, scoopy)));
-
-        (int256 previousDebt,) = config.alchemist.accounts(scoopy);
-        uint256 namePrice = config.controller.rentPrice(name, srens.renewalDuration());
-
-        // Gelato now execute the defined task.
-        // `srens` called by Gelato should renew `name` for `renewalDuration` for `namePrice` by minting some alETH debt.
-        vm.expectEmit(true, true, true, true, address(config.controller));
-        emit NameRenewed(name, labelHash, namePrice, expiresAt + srens.renewalDuration());
-        execRenewTask(gelatoFee, name, scoopy);
-
-        // Check `name`'s renewal increased `scoopy`'s Alchemix debt.
-        (int256 newDebt,) = config.alchemist.accounts(scoopy);
-        assertTrue(newDebt >= previousDebt + int256(namePrice + gelatoFee));
-    }
-
     /// @dev Test `srens.subscribe()`'s happy path.
     function testSubscribe() public {
         // Act as scoopy, an EOA.
@@ -149,7 +93,7 @@ contract SelfRepayingENSTest is Test {
         // Subscribe to the Self Repaying ENS service for `name`.
         // `srens` should emit a {Subscribed} event.
         vm.expectEmit(true, true, false, false, address(srens));
-        emit Subscribed(scoopy, name, name);
+        emit Subscribe(scoopy, name, name);
         bytes32 task = srens.subscribe(name);
 
         // `srens.getTaskId()` should return the same task id.
@@ -202,7 +146,7 @@ contract SelfRepayingENSTest is Test {
         // Subscribe to the Self Repaying ENS service for `name`.
         // `srens` should emit a {Subscribed} event.
         vm.expectEmit(true, true, false, false, address(srens));
-        emit Subscribed(address(0x1), name, name);
+        emit Subscribe(address(0x1), name, name);
         srens.subscribe(name);
     }
 
@@ -216,7 +160,7 @@ contract SelfRepayingENSTest is Test {
         // Unsubscribe to the Self Repaying ENS service for `name`.
         // `srens` should emit a {Unubscribed} event.
         vm.expectEmit(true, true, false, false, address(srens));
-        emit Unsubscribed(scoopy, name, name);
+        emit Unsubscribe(scoopy, name, name);
         srens.unsubscribe(name);
     }
 
@@ -228,6 +172,40 @@ contract SelfRepayingENSTest is Test {
         // Try to subscribe with a ENS name that doesn't exist.
         vm.expectRevert("Ops.cancelTask: Task not found"); // from Gelato Ops.
         srens.unsubscribe("dsadsfsdfdsf");
+    }
+
+    /// @dev Test `Multicall.multicall()` feature happy path.
+    function testMulticall() external {
+        // Act as Scoopy, an EOA. Alchemix checks msg.sender === tx.origin to know if sender is an EOA.
+        vm.startPrank(scoopy, scoopy);
+
+        // Prepare multicall data.
+        bytes[] memory data = new bytes[](3);
+        data[0] = abi.encodeCall(srens.subscribe, (name));
+        data[1] = abi.encodeCall(srens.subscribe, ("alchemix"));
+        data[2] = abi.encodeCall(srens.unsubscribe, (name));
+        // Subscribe to the `srens` service for multiple names and unsubscribe for one.
+        vm.expectEmit(true, true, false, false, address(srens));
+        emit Subscribe(scoopy, name, name);
+        vm.expectEmit(true, true, false, false, address(srens));
+        emit Subscribe(scoopy, "alchemix", name);
+        vm.expectEmit(true, true, false, false, address(srens));
+        emit Unsubscribe(scoopy, name, name);
+        srens.multicall(data);
+    }
+
+    /// @dev Test `Multicall.multicall()` feature reverts the entire transaction on revert.
+    function testMulticallWhenNameDoesNotExist() external {
+        // Act as Scoopy, an EOA. Alchemix checks msg.sender === tx.origin to know if sender is an EOA.
+        vm.startPrank(scoopy, scoopy);
+
+        // Prepare multicall data.
+        bytes[] memory data = new bytes[](2);
+        data[0] = abi.encodeCall(srens.subscribe, ("dsadsfsdfdsf"));
+        data[1] = abi.encodeCall(srens.subscribe, ("alchemix"));
+        // Try to subscribe to the `srens` service for multiple names with one that doesn't exist.
+        vm.expectRevert(SelfRepayingENS.IllegalArgument.selector);
+        srens.multicall(data);
     }
 
     /// @dev Test `srens.checker()`'s happy path.
@@ -364,38 +342,102 @@ contract SelfRepayingENSTest is Test {
         srens.renew(name, scoopy);
     }
 
-    /// @dev Test `Multicall.multicall()` feature happy path.
-    function testMulticall() external {
-        // Act as Scoopy, an EOA. Alchemix checks msg.sender === tx.origin to know if sender is an EOA.
-        vm.startPrank(scoopy, scoopy);
+    /// @dev Test the happy path of the entire Alchemix + AlETHRouter + SelfRepayingENS + ENS + Gelato interaction.
 
-        // Prepare multicall data.
-        bytes[] memory data = new bytes[](3);
-        data[0] = abi.encodeCall(srens.subscribe, (name));
-        data[1] = abi.encodeCall(srens.subscribe, ("alchemix"));
-        data[2] = abi.encodeCall(srens.unsubscribe, (name));
-        // Subscribe to the `srens` service for multiple names and unsubscribe for one.
+    ///
+    /// @dev **_NOTE:_** It is pretty difficult to perfectly test complex protocols locally when they rely on bots as they usually don't give integrators test mocks.
+    /// @dev **_NOTE:_** In the following tests we won't care about Alchemix/Yearn bots and we manually simulate Gelato's.
+    function testFullInteraction() external {
+        // Act as scoopy, an EOA.
+        vm.startPrank(scoopy, scoopy);
+        // Scoopy, the subscriber, needs to allow `router` to mint enough alETH debt token to pay for the renewal.
+        config.alchemist.approveMint(address(config.router), type(uint256).max);
+        // Scoopy, the subscriber, needs to allow `srens` to use the `router`.
+        config.router.approve(address(srens), type(uint256).max);
+
+        // Subscribe to the Self Repaying ENS service for `name`.
+        // `srens` should emit a {Subscribed} event.
         vm.expectEmit(true, true, false, false, address(srens));
-        emit Subscribed(scoopy, name, name);
-        vm.expectEmit(true, true, false, false, address(srens));
-        emit Subscribed(scoopy, "alchemix", name);
-        vm.expectEmit(true, true, false, false, address(srens));
-        emit Unsubscribed(scoopy, name, name);
-        srens.multicall(data);
+        emit Subscribe(scoopy, name, name);
+        srens.subscribe(name);
+
+        vm.stopPrank();
+
+        // Warp to some time before `name` expiry date.
+        bytes32 labelHash = keccak256(bytes(name));
+        uint256 expiresAt = config.registrar.nameExpires(uint256(labelHash));
+        vm.warp(expiresAt - 90 days);
+
+        // `srens` checker function should return false if base fee is too high to renew.
+        {
+            (bool canExec1, bytes memory execPayload1) = srens.checker(name, scoopy);
+            assertFalse(canExec1);
+            assertEq(execPayload1, bytes("Base fee too high"));
+        }
+
+        // Wait for `name` to be in its renew period.
+        vm.warp(expiresAt - 10 days);
+        // Set the base fee below the max base fee allowed to renew.
+        vm.fee(80 gwei);
+
+        // `srens` checker function should tell Gelato to execute the task by return true and the its payload.
+        (bool canExec, bytes memory execPayload) = srens.checker(name, scoopy);
+        assertTrue(canExec);
+        assertEq(execPayload, abi.encodeCall(srens.renew, (name, scoopy)));
+
+        (int256 previousDebt,) = config.alchemist.accounts(scoopy);
+        uint256 namePrice = config.controller.rentPrice(name, srens.renewalDuration());
+
+        // Gelato now execute the defined task.
+        // `srens` called by Gelato should renew `name` for `renewalDuration` for `namePrice` by minting some alETH debt.
+        vm.expectEmit(true, true, true, true, address(config.controller));
+        emit NameRenewed(name, labelHash, namePrice, expiresAt + srens.renewalDuration());
+        execRenewTask(gelatoFee, name, scoopy);
+
+        // Check `name`'s renewal increased `scoopy`'s Alchemix debt.
+        (int256 newDebt,) = config.alchemist.accounts(scoopy);
+        assertTrue(newDebt >= previousDebt + int256(namePrice + gelatoFee));
     }
 
-    /// @dev Test `Multicall.multicall()` feature reverts the entire transaction on revert.
-    function testMulticallWhenNameDoesNotExist() external {
-        // Act as Scoopy, an EOA. Alchemix checks msg.sender === tx.origin to know if sender is an EOA.
+    /// @dev Test the happy path of the entire Alchemix + AlETHRouter + SelfRepayingENS + ENS + Gelato interaction.
+    ///
+    /// @dev **_NOTE:_** It is pretty difficult to perfectly test complex protocols locally when they rely on bots as they usually don't give integrators test mocks.
+    /// @dev **_NOTE:_** In the following tests we won't care about Alchemix/Yearn bots and we manually simulate Gelato's.
+    function testFullInteractionAfterGracePeriod() external {
+        // Act as scoopy, an EOA.
         vm.startPrank(scoopy, scoopy);
+        // Scoopy, the subscriber, needs to allow `router` to mint enough alETH debt token to pay for the renewal.
+        config.alchemist.approveMint(address(config.router), type(uint256).max);
+        // Scoopy, the subscriber, needs to allow `srens` to use the `router`.
+        config.router.approve(address(srens), type(uint256).max);
+        // Subscribe to the Self Repaying ENS service for `name`.
+        srens.subscribe(name);
 
-        // Prepare multicall data.
-        bytes[] memory data = new bytes[](2);
-        data[0] = abi.encodeCall(srens.subscribe, ("dsadsfsdfdsf"));
-        data[1] = abi.encodeCall(srens.subscribe, ("alchemix"));
-        // Try to subscribe to the `srens` service for multiple names with one that doesn't exist.
-        vm.expectRevert(SelfRepayingENS.IllegalArgument.selector);
-        srens.multicall(data);
+        vm.stopPrank();
+
+        // Warp to some time after `name` expiry date.
+        bytes32 labelHash = keccak256(bytes(name));
+        uint256 expiresAt = config.registrar.nameExpires(uint256(labelHash));
+        vm.warp(expiresAt + 1 days);
+        vm.fee(150 gwei);
+
+        // `srens` checker function should tell Gelato to execute the task by return true and the its payload.
+        (bool canExec, bytes memory execPayload) = srens.checker(name, scoopy);
+        assertTrue(canExec);
+        assertEq(execPayload, abi.encodeCall(srens.renew, (name, scoopy)));
+
+        (int256 previousDebt,) = config.alchemist.accounts(scoopy);
+        uint256 namePrice = config.controller.rentPrice(name, srens.renewalDuration());
+
+        // Gelato now execute the defined task.
+        // `srens` called by Gelato should renew `name` for `renewalDuration` for `namePrice` by minting some alETH debt.
+        vm.expectEmit(true, true, true, true, address(config.controller));
+        emit NameRenewed(name, labelHash, namePrice, expiresAt + srens.renewalDuration());
+        execRenewTask(gelatoFee, name, scoopy);
+
+        // Check `name`'s renewal increased `scoopy`'s Alchemix debt.
+        (int256 newDebt,) = config.alchemist.accounts(scoopy);
+        assertTrue(newDebt >= previousDebt + int256(namePrice + gelatoFee));
     }
 
     /// @dev Simulate a Gelato Ops call with fees.
