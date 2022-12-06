@@ -343,7 +343,6 @@ contract SelfRepayingENSTest is Test {
     }
 
     /// @dev Test the happy path of the entire Alchemix + AlETHRouter + SelfRepayingENS + ENS + Gelato interaction.
-
     ///
     /// @dev **_NOTE:_** It is pretty difficult to perfectly test complex protocols locally when they rely on bots as they usually don't give integrators test mocks.
     /// @dev **_NOTE:_** In the following tests we won't care about Alchemix/Yearn bots and we manually simulate Gelato's.
@@ -399,10 +398,7 @@ contract SelfRepayingENSTest is Test {
         assertTrue(newDebt >= previousDebt + int256(namePrice + gelatoFee));
     }
 
-    /// @dev Test the happy path of the entire Alchemix + AlETHRouter + SelfRepayingENS + ENS + Gelato interaction.
-    ///
-    /// @dev **_NOTE:_** It is pretty difficult to perfectly test complex protocols locally when they rely on bots as they usually don't give integrators test mocks.
-    /// @dev **_NOTE:_** In the following tests we won't care about Alchemix/Yearn bots and we manually simulate Gelato's.
+    /// @dev Test the happy path of the entire user interaction with `srens`.
     function testFullInteractionAfterGracePeriod() external {
         // Act as scoopy, an EOA.
         vm.startPrank(scoopy, scoopy);
