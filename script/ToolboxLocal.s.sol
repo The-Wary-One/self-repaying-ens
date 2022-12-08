@@ -20,16 +20,14 @@ contract ToolboxLocal is Toolbox {
     function getResolveData(SelfRepayingENS srens, string memory name, address subscriber)
         public
         pure
-        returns (LibDataTypes.ModuleData memory)
+        returns (LibDataTypes.ModuleData memory moduleData)
     {
-        bytes32 resolverHash = keccak256(abi.encode(address(srens), abi.encodeCall(srens.checker, (name, subscriber))));
-
-        LibDataTypes.Module[] memory modules = new LibDataTypes.Module[](1);
-        modules[0] = LibDataTypes.Module.RESOLVER;
-        bytes[] memory args = new bytes[](1);
-        args[0] = abi.encode(resolverHash);
-
-        return LibDataTypes.ModuleData({modules: modules, args: args});
+        moduleData = LibDataTypes.ModuleData({
+            modules: new LibDataTypes.Module[](1),
+            args: new bytes[](1)
+        });
+        moduleData.modules[0] = LibDataTypes.Module.RESOLVER;
+        moduleData.args[0] = abi.encode(address(srens), abi.encodeCall(srens.checker, (name, subscriber)));
     }
 
     /// @dev Deploy the AlETHRouter contract on the local chain.

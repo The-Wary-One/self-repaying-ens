@@ -213,15 +213,14 @@ contract SelfRepayingENS is Multicall {
     function _getResolveModuleData(address subscriber, string memory name)
         internal
         view
-        returns (LibDataTypes.ModuleData memory)
+        returns (LibDataTypes.ModuleData memory moduleData)
     {
-        bytes32 resolverHash = keccak256(abi.encode(address(this), abi.encodeCall(this.checker, (name, subscriber))));
-
-        LibDataTypes.Module[] memory modules = new LibDataTypes.Module[](1);
-        modules[0] = LibDataTypes.Module.RESOLVER;
-        bytes[] memory args = new bytes[](1);
-        args[0] = abi.encode(resolverHash);
-        return LibDataTypes.ModuleData({modules: modules, args: args});
+        moduleData = LibDataTypes.ModuleData({
+            modules: new LibDataTypes.Module[](1),
+            args: new bytes[](1)
+        });
+        moduleData.modules[0] = LibDataTypes.Module.RESOLVER;
+        moduleData.args[0] = abi.encode(address(this), abi.encodeCall(this.checker, (name, subscriber)));
     }
 
     /// @dev Get the variable maximum base fee for this expired name.
