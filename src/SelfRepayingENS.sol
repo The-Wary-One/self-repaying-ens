@@ -144,11 +144,11 @@ contract SelfRepayingENS is Multicall {
     {
         unchecked {
             // Check `name` expiry.
-            // Try to limit the renew transaction base fee which means limiting the gelato fee.
+            // Try to limit the renew transaction gas price which means limiting the gelato fee.
             uint256 expiresAt = registrar.nameExpires(uint256(keccak256(bytes(name))));
-            if (block.basefee > _getVariableMaxBaseFee(int256(block.timestamp) - int256(expiresAt))) {
+            if (tx.gasprice > _getVariableMaxGasPrice(int256(block.timestamp) - int256(expiresAt))) {
                 // Log the reason.
-                return (false, bytes("Base fee too high"));
+                return (false, bytes("gas price too high"));
             }
 
             // Return the Gelato task payload to execute. It must call `this.renew(name, subscriber)`.
@@ -215,39 +215,36 @@ contract SelfRepayingENS is Multicall {
         view
         returns (LibDataTypes.ModuleData memory moduleData)
     {
-        moduleData = LibDataTypes.ModuleData({
-            modules: new LibDataTypes.Module[](1),
-            args: new bytes[](1)
-        });
+        moduleData = LibDataTypes.ModuleData({modules: new LibDataTypes.Module[](1), args: new bytes[](1)});
         moduleData.modules[0] = LibDataTypes.Module.RESOLVER;
         moduleData.args[0] = abi.encode(address(this), abi.encodeCall(this.checker, (name, subscriber)));
     }
 
-    /// @dev Get the variable maximum base fee for this expired name.
+    /// @dev Get the variable maximum gas price for this expired name.
     ///
     /// @param name The ENS name to renew.
-    /// @return The maximum base fee in wei allowed to renew `name`.
-    function getVariableMaxBaseFee(string calldata name) external view returns (uint256) {
+    /// @return The maximum gas price in wei allowed to renew `name`.
+    function getVariableMaxGasPrice(string calldata name) external view returns (uint256) {
         unchecked {
             uint256 expiryDate = registrar.nameExpires(uint256(keccak256(bytes(name))));
-            return _getVariableMaxBaseFee(int256(block.timestamp) - int256(expiryDate));
+            return _getVariableMaxGasPrice(int256(block.timestamp) - int256(expiryDate));
         }
     }
 
-    /// @dev Get the variable maximum base fee allowed to renew a name depending on its expiry time.
+    /// @dev Get the variable maximum gas price allowed to renew a name depending on its expiry time.
     ///
-    /// @dev The formula is: y = x + e^(x / 2.62 - 30); where y is the base fee limit in gwei and x is the number of days before (expiry time - 90 days).
+    /// @dev The formula is: y = x + e^(x / 2.62 - 30); where y is the gas price limit in gwei and x is the number of days before (expiry time - 90 days).
     ///
     /// @param expiredDuration The expired time in seconds of an ENS name.
     /// @dev expiredDuration can be negative since we want to try to renew BEFORE the ENS name is expired.
-    /// @return The maximum base fee allowed in wei.
-    function _getVariableMaxBaseFee(int256 expiredDuration) internal pure returns (uint256) {
+    /// @return The maximum gas price allowed in wei.
+    function _getVariableMaxGasPrice(int256 expiredDuration) internal pure returns (uint256) {
         unchecked {
             if (expiredDuration < -90 days) {
                 // We don't want to try to renew before.
                 return 0;
             } else if (expiredDuration > 0) {
-                // Remove the base fee limit after expiry.
+                // Remove the gas price limit after expiry.
                 return type(uint256).max;
             }
             // Between 90 and 0 days before expiry.
@@ -258,9 +255,9 @@ contract SelfRepayingENS is Multicall {
             // a = e^exp; in wad.
             uint256 a = uint256(wadExp(exponant));
             // y = x + a; in wad.
-            uint256 maxBaseFeeWad = x + a;
+            uint256 maxGasPriceWad = x + a;
             // In gwei;
-            return maxBaseFeeWad / 1e9;
+            return maxGasPriceWad / 1e9;
         }
     }
 

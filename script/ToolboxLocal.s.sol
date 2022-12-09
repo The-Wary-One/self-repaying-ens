@@ -22,10 +22,7 @@ contract ToolboxLocal is Toolbox {
         pure
         returns (LibDataTypes.ModuleData memory moduleData)
     {
-        moduleData = LibDataTypes.ModuleData({
-            modules: new LibDataTypes.Module[](1),
-            args: new bytes[](1)
-        });
+        moduleData = LibDataTypes.ModuleData({modules: new LibDataTypes.Module[](1), args: new bytes[](1)});
         moduleData.modules[0] = LibDataTypes.Module.RESOLVER;
         moduleData.args[0] = abi.encode(address(srens), abi.encodeCall(srens.checker, (name, subscriber)));
     }

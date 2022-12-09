@@ -14,7 +14,7 @@ contract SelfRepayingENSStub is SelfRepayingENS {
 
     /* --- EXPOSED INTERNAL FUNCTIONS --- */
 
-    function publicGetVariableMaxBaseFee(int256 expiredDuration) external pure returns (uint256) {
-        return _getVariableMaxBaseFee(expiredDuration);
+    function publicGetVariableMaxGasPrice(int256 expiredDuration) external pure returns (uint256) {
+        return _getVariableMaxGasPrice(expiredDuration);
     }
 }

@@ -215,9 +215,6 @@ contract SelfRepayingENSTest is Test {
         uint256 expiresAt = config.registrar.nameExpires(uint256(labelHash));
         vm.warp(expiresAt - 4 days);
 
-        // Set the base fee below the max base fee allowed to renew.
-        vm.fee(101 gwei);
-
         // Wait for `name` to be in its grace period.
         // `srens` checker function should tell Gelato to execute the task by return true and the its payload.
         (bool canExec, bytes memory execPayload) = srens.checker(name, scoopy);
@@ -225,24 +222,21 @@ contract SelfRepayingENSTest is Test {
         assertEq(execPayload, abi.encodeCall(srens.renew, (name, scoopy)));
     }
 
-    /// @dev Test `srens.checker()`'s returns false when the base fee is too high.
-    function testCheckerWhenBaseFeeTooHigh() external {
+    /// @dev Test `srens.checker()`'s returns false when the gas price is too high.
+    function testCheckerWhenGasPriceTooHigh() external {
         // Wait for `name` to be in its grace period.
         bytes32 labelHash = keccak256(bytes(name));
         uint256 expiresAt = config.registrar.nameExpires(uint256(labelHash));
         vm.warp(expiresAt - 80 days);
 
-        // Set the base fee.
-        vm.fee(30 gwei);
-
         // `srens` checker function should return false as `name` is not expired.
         (bool canExec, bytes memory execPayload) = srens.checker(name, scoopy);
         assertFalse(canExec);
-        assertEq(execPayload, bytes("Base fee too high"));
+        assertEq(execPayload, bytes("gas price too high"));
     }
 
-    /// @dev Test the internal function `srens._getVariableMaxBaseFee()` returns the correct base fee limit.
-    function testVariableMaxRenewBaseFee() external {
+    /// @dev Test the internal function `srens._getVariableMaxGasPrice()` returns the correct gas price limit.
+    function testVariableMaxRenewGasPrice() external {
         SelfRepayingENSStub stub = new SelfRepayingENSStub(
             config.router,
             config.controller,
@@ -250,34 +244,34 @@ contract SelfRepayingENSTest is Test {
             config.gelatoOps
         );
         // We don't want to try to renew before 90 days before expiry.
-        assertEq(stub.publicGetVariableMaxBaseFee(-90 days), 0);
-        // 80 days before expiry we want to renew at a max base fee of 10 gwei.
-        assertEq(stub.publicGetVariableMaxBaseFee(-80 days), 10 gwei);
-        // 40 days before expiry we want to renew at a max base fee of 50 gwei.
-        assertApproxEqAbs(stub.publicGetVariableMaxBaseFee(-40 days), 50 gwei, 1 gwei);
-        // 10 days before expiry we want to renew at a max base fee of around 80 gwei.
-        assertApproxEqAbs(stub.publicGetVariableMaxBaseFee(-10 days), 80 gwei, 2 gwei);
-        // 2 days before expiry we want to renew at a max base fee of around 125 gwei.
-        assertApproxEqAbs(stub.publicGetVariableMaxBaseFee(-2 days), 125 gwei, 1 gwei);
-        // Since expiry we remove the base fee limit.
-        assertEq(stub.publicGetVariableMaxBaseFee(1), type(uint256).max);
+        assertEq(stub.publicGetVariableMaxGasPrice(-90 days), 0);
+        // 80 days before expiry we want to renew at a max gas price of 10 gwei.
+        assertEq(stub.publicGetVariableMaxGasPrice(-80 days), 10 gwei);
+        // 40 days before expiry we want to renew at a max gas price of 50 gwei.
+        assertApproxEqAbs(stub.publicGetVariableMaxGasPrice(-40 days), 50 gwei, 1 gwei);
+        // 10 days before expiry we want to renew at a max gas price of around 80 gwei.
+        assertApproxEqAbs(stub.publicGetVariableMaxGasPrice(-10 days), 80 gwei, 2 gwei);
+        // 2 days before expiry we want to renew at a max gas price of around 125 gwei.
+        assertApproxEqAbs(stub.publicGetVariableMaxGasPrice(-2 days), 125 gwei, 1 gwei);
+        // Since expiry we remove the gas price limit.
+        assertEq(stub.publicGetVariableMaxGasPrice(1), type(uint256).max);
     }
 
-    /// @dev Test `srens.getVariableMaxBaseFee()` returns the correct base fee limit for `name`.
-    function testGetVariableMaxBaseFeeByName() external {
+    /// @dev Test `srens.getVariableMaxGasPrice()` returns the correct gas price limit for `name`.
+    function testGetVariableMaxGasPriceByName() external {
         // Warp to 90 days before expiry.
         bytes32 labelHash = keccak256(bytes(name));
         uint256 expiresAt = config.registrar.nameExpires(uint256(labelHash));
         vm.warp(expiresAt - 90 days);
 
         // Before being expired, it should return 0.
-        assertEq(srens.getVariableMaxBaseFee(name), 0);
+        assertEq(srens.getVariableMaxGasPrice(name), 0);
 
         // Wait for `name` to be in its 90 days renew period.
         vm.warp(expiresAt - 40 days);
 
-        // 40 days before expiry we want to renew at a max base fee of 50 gwei.
-        assertApproxEqAbs(srens.getVariableMaxBaseFee(name), 50 gwei, 1 gwei);
+        // 40 days before expiry we want to renew at a max gas price of 50 gwei.
+        assertApproxEqAbs(srens.getVariableMaxGasPrice(name), 50 gwei, 1 gwei);
     }
 
     /// @dev Test `srens.renew()` reverts when the caller isn't the `GelatoOps` contract.
@@ -367,17 +361,15 @@ contract SelfRepayingENSTest is Test {
         uint256 expiresAt = config.registrar.nameExpires(uint256(labelHash));
         vm.warp(expiresAt - 90 days);
 
-        // `srens` checker function should return false if base fee is too high to renew.
+        // `srens` checker function should return false if gas price is too high to renew.
         {
             (bool canExec1, bytes memory execPayload1) = srens.checker(name, scoopy);
             assertFalse(canExec1);
-            assertEq(execPayload1, bytes("Base fee too high"));
+            assertEq(execPayload1, bytes("gas price too high"));
         }
 
         // Wait for `name` to be in its renew period.
         vm.warp(expiresAt - 10 days);
-        // Set the base fee below the max base fee allowed to renew.
-        vm.fee(80 gwei);
 
         // `srens` checker function should tell Gelato to execute the task by return true and the its payload.
         (bool canExec, bytes memory execPayload) = srens.checker(name, scoopy);
@@ -415,7 +407,6 @@ contract SelfRepayingENSTest is Test {
         bytes32 labelHash = keccak256(bytes(name));
         uint256 expiresAt = config.registrar.nameExpires(uint256(labelHash));
         vm.warp(expiresAt + 1 days);
-        vm.fee(150 gwei);
 
         // `srens` checker function should tell Gelato to execute the task by return true and the its payload.
         (bool canExec, bytes memory execPayload) = srens.checker(name, scoopy);

@@ -1,4 +1,4 @@
-name: test
+name: ci
 
 on:
   push:
@@ -31,10 +31,15 @@ jobs:
           forge build --sizes
         id: build
 
+      - name: Run Forge fmt
+        run: |
+          forge fmt --check
+        id: fmt
+
       - name: Run Forge tests
         env:
           RPC_MAINNET: ${{ secrets.RPC_MAINNET }}
           BLOCK_NUMBER_MAINNET: 16125170
         run: |
-          forge test -vvv
+          ./test.sh
         id: test
