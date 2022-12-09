@@ -59,7 +59,7 @@ vim .env
 
 Run the tests
 #+begin_src bash
-forge test
+./test.sh
 #+end_src
 
 
