@@ -8,6 +8,7 @@ import {WETHGateway} from "../lib/alchemix/src/WETHGateway.sol";
 import {Whitelist} from "../lib/alchemix/src/utils/Whitelist.sol";
 
 import {SelfRepayingENSStub, SelfRepayingENS, LibDataTypes} from "./stubs/SelfRepayingENS.sol";
+import {Freeloader} from "./stubs/Freeloader.sol";
 import {DeploySRENS} from "../script/DeploySRENS.s.sol";
 import {ToolboxLocal, Toolbox} from "../script/ToolboxLocal.s.sol";
 
@@ -425,6 +426,81 @@ contract SelfRepayingENSTest is Test {
         // Check `name`'s renewal increased `scoopy`'s Alchemix debt.
         (int256 newDebt,) = config.alchemist.accounts(scoopy);
         assertTrue(newDebt >= previousDebt + int256(namePrice + gelatoFee));
+    }
+
+    /// @dev Test another contract cannot renew their name using one of `srens` user funds.
+    function testFreeloaderAttack() external {
+        // Act as scoopy, an EOA.
+        vm.startPrank(scoopy, scoopy);
+        // Scoopy, the subscriber, needs to allow `router` to mint enough alETH debt token to pay for the renewal.
+        config.alchemist.approveMint(address(config.router), type(uint256).max);
+        // Scoopy, the subscriber, needs to allow `srens` to use the `router`.
+        config.router.approve(address(srens), type(uint256).max);
+        // Subscribe to the Self Repaying ENS service for `name`.
+        srens.subscribe(name);
+        vm.stopPrank();
+
+        // Setup the attacker account and contract.
+        address techno = address(0xbadbad);
+        vm.label(techno, "techno");
+        vm.deal(techno, 1 ether);
+        // Act as techno, an EOA.
+        vm.startPrank(techno, techno);
+        // Other name to renew.
+        string memory otherName = "FreeloaderENS";
+        // Check `name`'s rent price.
+        uint256 registrationDuration = config.controller.MIN_REGISTRATION_DURATION();
+        uint256 namePrice = config.controller.rentPrice(otherName, registrationDuration);
+        // Register `otherName`.
+        bytes32 secret = keccak256(bytes("SuperSecret"));
+        bytes32 commitment = config.controller.makeCommitment(otherName, techno, secret);
+        config.controller.commit(commitment);
+        vm.warp(block.timestamp + config.controller.minCommitmentAge());
+        config.controller.register{value: namePrice}(otherName, techno, registrationDuration, secret);
+        // Warp to some time after `name` expiry date.
+        bytes32 labelHash = keccak256(bytes(otherName));
+        uint256 expiresAt = config.registrar.nameExpires(uint256(labelHash));
+        vm.warp(expiresAt + 1 days);
+
+        // Deploy the Freeloader contract to use `scoopy`'s account to renew `otherName`.
+        Freeloader freeloader = new Freeloader(
+            srens,
+            config.gelatoOps,
+            scoopy
+        );
+
+        freeloader.subscribe(otherName);
+        vm.stopPrank();
+
+        // `freeloader` checker function should tell Gelato to execute the task by return true and the its payload.
+        {
+            (bool canExec, bytes memory execPayload) = srens.checker(otherName, scoopy);
+            assertTrue(canExec);
+            assertEq(execPayload, abi.encodeCall(srens.renew, (otherName, scoopy)));
+        }
+
+        (int256 previousDebt,) = config.alchemist.accounts(scoopy);
+
+        // Gelato now execute the defined task.
+        // `freeloader` called by Gelato should renew `otherName` for `renewalDuration` for `namePrice` by minting some alETH debt.
+        {
+            LibDataTypes.ModuleData memory moduleData = LibDataTypes.ModuleData({modules: new LibDataTypes.Module[](1), args: new bytes[](1)});
+            moduleData.modules[0] = LibDataTypes.Module.RESOLVER;
+            moduleData.args[0] = abi.encode(address(srens), abi.encodeCall(srens.checker, (otherName, scoopy)));
+            vm.prank(config.gelato);
+            // `srens` should revert !
+            vm.expectRevert(SelfRepayingENS.Unauthorized.selector);
+            config.gelatoOps.exec(
+                address(freeloader),
+                address(srens),
+                abi.encodeCall(srens.renew, (otherName, scoopy)),
+                moduleData,
+                gelatoFee,
+                ETH,
+                false,
+                true
+            );
+        }
     }
 
     /// @dev Simulate a Gelato Ops call with fees.
