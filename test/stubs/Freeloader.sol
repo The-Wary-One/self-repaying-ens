@@ -10,23 +10,22 @@ contract Freeloader {
     address immutable subscriber;
     address constant ETH = 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE;
 
-    constructor(
-        SelfRepayingENS _srens,
-        Ops _gelatoOps,
-        address _subscriber
-    ) {
+    constructor(SelfRepayingENS _srens, Ops _gelatoOps, address _subscriber) {
         srens = _srens;
         gelatoOps = _gelatoOps;
         subscriber = _subscriber;
     }
 
     function subscribe(string memory name) external returns (bytes32 task) {
-        LibDataTypes.ModuleData memory moduleData = LibDataTypes.ModuleData({modules: new LibDataTypes.Module[](1), args: new bytes[](1)});
-        moduleData.modules[0] = LibDataTypes.Module.RESOLVER;
-        moduleData.args[0] = abi.encode(address(srens), abi.encodeCall(srens.checker, (name, subscriber)));
+        LibDataTypes.ModuleData memory moduleData =
+            LibDataTypes.ModuleData({modules: new LibDataTypes.Module[](2), args: new bytes[](2)});
 
-        task = gelatoOps.createTask(
-            address(srens), abi.encode(srens.renew.selector), moduleData, ETH
-        );
+        moduleData.modules[0] = LibDataTypes.Module.RESOLVER;
+        moduleData.modules[1] = LibDataTypes.Module.PROXY;
+
+        moduleData.args[0] = abi.encode(address(srens), abi.encodeCall(srens.checker, (name, subscriber)));
+        moduleData.args[1] = bytes("");
+
+        task = gelatoOps.createTask(address(srens), abi.encode(srens.renew.selector), moduleData, ETH);
     }
 }

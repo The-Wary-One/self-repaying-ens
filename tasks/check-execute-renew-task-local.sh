@@ -59,7 +59,7 @@ execData=$(cast calldata "renew(string,address)" "$name" "$subscriber")
 moduleData=$(forge script script/ToolboxLocal.s.sol:ToolboxLocal \
     -f "http://localhost:8545" \
     --private-key "0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d" \
-    -s "getResolveData(address,string,address)" "$address" "$name" "$subscriber" \
+    -s "getModuleData(address,string,address)" "$address" "$name" "$subscriber" \
     --silent \
     --json | jq -rc '.returns."0".value' | tr -d "[:space:]")
 

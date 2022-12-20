@@ -17,14 +17,18 @@ contract ToolboxLocal is Toolbox {
     }
 
     /// @dev Get the Gelato module data.
-    function getResolveData(SelfRepayingENS srens, string memory name, address subscriber)
+    function getModuleData(SelfRepayingENS srens, string memory name, address subscriber)
         public
         pure
         returns (LibDataTypes.ModuleData memory moduleData)
     {
-        moduleData = LibDataTypes.ModuleData({modules: new LibDataTypes.Module[](1), args: new bytes[](1)});
+        moduleData = LibDataTypes.ModuleData({modules: new LibDataTypes.Module[](2), args: new bytes[](2)});
+
         moduleData.modules[0] = LibDataTypes.Module.RESOLVER;
+        moduleData.modules[1] = LibDataTypes.Module.PROXY;
+
         moduleData.args[0] = abi.encode(address(srens), abi.encodeCall(srens.checker, (name, subscriber)));
+        moduleData.args[1] = bytes("");
     }
 
     /// @dev Deploy the AlETHRouter contract on the local chain.

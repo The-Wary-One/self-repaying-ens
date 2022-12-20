@@ -280,15 +280,22 @@ contract SelfRepayingENSTest is Test {
         // Act as scoopy, an EOA, for the next call.
         vm.prank(scoopy, scoopy);
 
-        // Try to renew `name` without being the GelatoOps contract.
+        // Try to renew `name` without being the dedicated proxy contract.
+        vm.expectRevert(SelfRepayingENS.Unauthorized.selector);
+        srens.renew(name, scoopy);
+
+        // Act as GelatoOps.
+        vm.prank(address(config.gelatoOps));
+
+        // Try to renew `name` without being the dedicated proxy contract.
         vm.expectRevert(SelfRepayingENS.Unauthorized.selector);
         srens.renew(name, scoopy);
     }
 
     /// @dev Test `srens.renew()` reverts when the user didn't give `srens` enough mint allowance.
     function testRenewWhenNotEnoughMintAllowance() external {
-        // Act as a Gelato Ops
-        vm.prank(address(config.gelatoOps));
+        // Act as a the dedicated Gelato proxy.
+        vm.prank(address(srens.dedicatedExecutorProxy()));
 
         // Try to renew `name` without approving `srens` to mint debt.
         vm.expectRevert(stdError.arithmeticError);
@@ -302,8 +309,8 @@ contract SelfRepayingENSTest is Test {
         // Scoopy, the subscriber, needs to allow `srens` to use the `router`.
         config.router.approve(address(srens), 1);
 
-        // Act as a Gelato Ops
-        vm.prank(address(config.gelatoOps));
+        // Act as a the dedicated Gelato proxy.
+        vm.prank(address(srens.dedicatedExecutorProxy()));
 
         // Try to renew `name` without approving `srens` to mint debt.
         vm.expectRevert(stdError.arithmeticError);
@@ -329,8 +336,8 @@ contract SelfRepayingENSTest is Test {
 
         vm.stopPrank();
 
-        // Act as a Gelato Operator for the next call.
-        vm.prank(address(config.gelatoOps));
+        // Act as a the dedicated Gelato proxy.
+        vm.prank(address(srens.dedicatedExecutorProxy()));
 
         // Try to renew `name` without enough collateral to cover the renew cost.
         vm.expectRevert(abi.encodeWithSignature("Undercollateralized()"));
@@ -378,12 +385,12 @@ contract SelfRepayingENSTest is Test {
         assertEq(execPayload, abi.encodeCall(srens.renew, (name, scoopy)));
 
         (int256 previousDebt,) = config.alchemist.accounts(scoopy);
-        uint256 namePrice = config.controller.rentPrice(name, srens.renewalDuration());
+        uint256 namePrice = config.controller.rentPrice(name, 365 days);
 
         // Gelato now execute the defined task.
         // `srens` called by Gelato should renew `name` for `renewalDuration` for `namePrice` by minting some alETH debt.
         vm.expectEmit(true, true, true, true, address(config.controller));
-        emit NameRenewed(name, labelHash, namePrice, expiresAt + srens.renewalDuration());
+        emit NameRenewed(name, labelHash, namePrice, expiresAt + 365 days);
         execRenewTask(gelatoFee, name, scoopy);
 
         // Check `name`'s renewal increased `scoopy`'s Alchemix debt.
@@ -415,12 +422,12 @@ contract SelfRepayingENSTest is Test {
         assertEq(execPayload, abi.encodeCall(srens.renew, (name, scoopy)));
 
         (int256 previousDebt,) = config.alchemist.accounts(scoopy);
-        uint256 namePrice = config.controller.rentPrice(name, srens.renewalDuration());
+        uint256 namePrice = config.controller.rentPrice(name, 365 days);
 
         // Gelato now execute the defined task.
         // `srens` called by Gelato should renew `name` for `renewalDuration` for `namePrice` by minting some alETH debt.
         vm.expectEmit(true, true, true, true, address(config.controller));
-        emit NameRenewed(name, labelHash, namePrice, expiresAt + srens.renewalDuration());
+        emit NameRenewed(name, labelHash, namePrice, expiresAt + 365 days);
         execRenewTask(gelatoFee, name, scoopy);
 
         // Check `name`'s renewal increased `scoopy`'s Alchemix debt.
@@ -472,24 +479,21 @@ contract SelfRepayingENSTest is Test {
         freeloader.subscribe(otherName);
         vm.stopPrank();
 
-        // `freeloader` checker function should tell Gelato to execute the task by return true and the its payload.
-        {
-            (bool canExec, bytes memory execPayload) = srens.checker(otherName, scoopy);
-            assertTrue(canExec);
-            assertEq(execPayload, abi.encodeCall(srens.renew, (otherName, scoopy)));
-        }
-
-        (int256 previousDebt,) = config.alchemist.accounts(scoopy);
-
         // Gelato now execute the defined task.
-        // `freeloader` called by Gelato should renew `otherName` for `renewalDuration` for `namePrice` by minting some alETH debt.
+        // `srens` called by Gelato should renew `otherName` for `renewalDuration` for `namePrice` by minting some alETH debt using `scoopy` account.
         {
-            LibDataTypes.ModuleData memory moduleData = LibDataTypes.ModuleData({modules: new LibDataTypes.Module[](1), args: new bytes[](1)});
+            LibDataTypes.ModuleData memory moduleData =
+                LibDataTypes.ModuleData({modules: new LibDataTypes.Module[](2), args: new bytes[](2)});
+
             moduleData.modules[0] = LibDataTypes.Module.RESOLVER;
+            moduleData.modules[1] = LibDataTypes.Module.PROXY;
+
             moduleData.args[0] = abi.encode(address(srens), abi.encodeCall(srens.checker, (otherName, scoopy)));
+            moduleData.args[1] = bytes("");
+
             vm.prank(config.gelato);
-            // `srens` should revert !
-            vm.expectRevert(SelfRepayingENS.Unauthorized.selector);
+            // It should not be possible !
+            vm.expectRevert("Ops.exec: OpsProxy.executeCall: NoErrorSelector");
             config.gelatoOps.exec(
                 address(freeloader),
                 address(srens),
@@ -505,7 +509,7 @@ contract SelfRepayingENSTest is Test {
 
     /// @dev Simulate a Gelato Ops call with fees.
     function execRenewTask(uint256 fee, string memory _name, address subscriber) internal {
-        LibDataTypes.ModuleData memory moduleData = toolbox.getResolveData(srens, _name, subscriber);
+        LibDataTypes.ModuleData memory moduleData = toolbox.getModuleData(srens, _name, subscriber);
 
         // Act as the Gelato main contract.
         vm.prank(config.gelato);

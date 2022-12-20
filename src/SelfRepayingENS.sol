@@ -8,28 +8,33 @@ import {
     BaseRegistrarImplementation
 } from "../lib/ens-contracts/contracts/ethregistrar/ETHRegistrarController.sol";
 import {Ops, LibDataTypes} from "../lib/ops/contracts/Ops.sol";
+import {ProxyModule} from "../lib/ops/contracts/taskModules/ProxyModule.sol";
+import {IOpsProxyFactory} from "../lib/ops/contracts/interfaces/IOpsProxyFactory.sol";
 import {Multicall} from "../lib/openzeppelin/contracts/utils/Multicall.sol";
 
 /// @title SelfRepayingENS
 /// @author Wary
 contract SelfRepayingENS is Multicall {
     /// @notice The ENS name renewal duration in seconds.
-    uint256 public constant renewalDuration = 365 days;
+    uint256 constant renewalDuration = 365 days;
 
     /// @notice The Alchemix alETH router contract.
-    AlETHRouter public immutable router;
+    AlETHRouter immutable router;
 
     /// @notice The ENS ETHRegistrarController (i.e. .eth controller) contract.
-    ETHRegistrarController public immutable controller;
+    ETHRegistrarController immutable controller;
 
     /// @notice The ENS BaseRegistrarImplementation (i.e. .eth registrar) contract.
-    BaseRegistrarImplementation public immutable registrar;
+    BaseRegistrarImplementation immutable registrar;
 
     /// @notice The Gelato contract.
-    address payable public immutable gelato;
+    address payable immutable gelato;
 
     /// @notice The Gelato Ops contract.
-    Ops public immutable gelatoOps;
+    Ops immutable gelatoOps;
+
+    /// @notice The dedicated Gelato proxy executing the renew tasks.
+    address public immutable dedicatedExecutorProxy;
 
     /// @notice The Gelato address for ETH.
     address constant ETH = 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE;
@@ -75,6 +80,8 @@ contract SelfRepayingENS is Multicall {
         gelatoOps = _gelatoOps;
 
         gelato = _gelatoOps.gelato();
+        address proxyModule = gelatoOps.taskModuleAddresses(LibDataTypes.Module.PROXY);
+        dedicatedExecutorProxy = ProxyModule(proxyModule).opsProxyFactory().determineProxyAddress(address(this));
     }
 
     /// @notice Subscribe to the self repaying ENS renewals service for `name`.
@@ -100,9 +107,8 @@ contract SelfRepayingENS is Multicall {
 
         // Create a gelato task to monitor `name`'s expiry and renew it.
         // We choose to pay Gelato when executing the task.
-        task = gelatoOps.createTask(
-            address(this), abi.encode(this.renew.selector), _getResolveModuleData(msg.sender, name), ETH
-        );
+        task =
+            gelatoOps.createTask(address(this), abi.encode(this.renew.selector), _getModuleData(msg.sender, name), ETH);
 
         emit Subscribe(msg.sender, name, name);
     }
@@ -167,8 +173,9 @@ contract SelfRepayingENS is Multicall {
     /// @param subscriber The address of the subscriber.
     function renew(string calldata name, address subscriber) external payable {
         unchecked {
-            // Only the Gelato Ops contract can call this function.
-            if (msg.sender != address(gelatoOps)) {
+            // Only the dedicated Gelato Ops Proxy contract can call this function.
+            // Without it any Gelato task created from other contract could call `renew` for `name` using `subscriber`'s Alchemix account.
+            if (msg.sender != dedicatedExecutorProxy) {
                 revert Unauthorized();
             }
 
@@ -205,19 +212,23 @@ contract SelfRepayingENS is Multicall {
     /// @param name The ENS name to renew.
     /// @param subscriber The address of the subscriber.
     function getTaskId(address subscriber, string memory name) public view returns (bytes32) {
-        LibDataTypes.ModuleData memory moduleData = _getResolveModuleData(subscriber, name);
+        LibDataTypes.ModuleData memory moduleData = _getModuleData(subscriber, name);
         return gelatoOps.getTaskId(address(this), address(this), this.renew.selector, moduleData, ETH);
     }
 
-    /// @dev Helper function to get the Gelato resolve module data.
-    function _getResolveModuleData(address subscriber, string memory name)
+    /// @dev Helper function to get the Gelato module data.
+    function _getModuleData(address subscriber, string memory name)
         internal
         view
         returns (LibDataTypes.ModuleData memory moduleData)
     {
-        moduleData = LibDataTypes.ModuleData({modules: new LibDataTypes.Module[](1), args: new bytes[](1)});
+        moduleData = LibDataTypes.ModuleData({modules: new LibDataTypes.Module[](2), args: new bytes[](2)});
+
         moduleData.modules[0] = LibDataTypes.Module.RESOLVER;
+        moduleData.modules[1] = LibDataTypes.Module.PROXY;
+
         moduleData.args[0] = abi.encode(address(this), abi.encodeCall(this.checker, (name, subscriber)));
+        moduleData.args[1] = bytes("");
     }
 
     /// @dev Get the variable maximum gas price for this expired name.
