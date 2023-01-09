@@ -116,6 +116,20 @@ contract Toolbox is Script {
         srens.subscribe(name);
     }
 
+    /// @dev Unsubscribe for `name`.
+    function unsubscribe(string calldata name) external {
+        // Check srens was deployed.
+        (bool isReady, string memory message) = check();
+        if (!isReady) {
+            revert(message);
+        }
+
+        // Unsubscribe for `name`.
+        SelfRepayingENS srens = getLastSRENSDeployment();
+        vm.broadcast();
+        srens.unsubscribe(name);
+    }
+
     /// @dev Approve the last deployed router contract to mint alETH debt and the last deployed srens contract to use the router.
     function approve() external {
         // Get the config.

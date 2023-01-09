@@ -36,8 +36,8 @@ result=$(cast call "$address" \
 result=($result)
 isReady=${result[0]}
 
-# Check the name renew base fee floor.
-nameBaseFeeFloor=$(cast call "$address" "getVariableMaxBaseFee(string)(uint256)" "$name")
+# Check the name renew base gas price floor.
+nameBaseFeeFloor=$(cast call "$address" "getVariableMaxGasPrice(string)(uint256)" "$name")
 echo "🔍 $name base fee floor: $nameBaseFeeFloor wei."
 
 if [ "$isReady" == false ]
@@ -61,7 +61,7 @@ moduleData=$(forge script script/ToolboxLocal.s.sol:ToolboxLocal \
     --private-key "0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d" \
     -s "getModuleData(address,string,address)" "$address" "$name" "$subscriber" \
     --silent \
-    --json | jq -rc '.returns."0".value' | tr -d "[:space:]")
+    --json | jq -rc '.returns.moduleData.value' | tr -d "[:space:]")
 
 estimated=$(cast estimate 0xB3f5503f93d5Ef84b06993a1975B9D21B962892F \
     --from 0x3CACa7b48D0573D793d3b0279b5F0029180E83b6 \
