@@ -455,7 +455,7 @@ contract SelfRepayingENSTest is Test {
         vm.startPrank(techno, techno);
         // Other name to renew.
         string memory otherName = "FreeloaderENS";
-        // Check `name`'s rent price.
+        // Check `otherName`'s rent price.
         uint256 registrationDuration = config.controller.MIN_REGISTRATION_DURATION();
         uint256 namePrice = config.controller.rentPrice(otherName, registrationDuration);
         // Register `otherName`.
@@ -464,7 +464,7 @@ contract SelfRepayingENSTest is Test {
         config.controller.commit(commitment);
         vm.warp(block.timestamp + config.controller.minCommitmentAge());
         config.controller.register{value: namePrice}(otherName, techno, registrationDuration, secret);
-        // Warp to some time after `name` expiry date.
+        // Warp to some time after `otherName` expiry date.
         bytes32 labelHash = keccak256(bytes(otherName));
         uint256 expiresAt = config.registrar.nameExpires(uint256(labelHash));
         vm.warp(expiresAt + 1 days);
@@ -480,7 +480,7 @@ contract SelfRepayingENSTest is Test {
         vm.stopPrank();
 
         // Gelato now execute the defined task.
-        // `srens` called by Gelato should renew `otherName` for `renewalDuration` for `namePrice` by minting some alETH debt using `scoopy` account.
+        // `srens` called by Gelato should not renew `otherName` for `renewalDuration` and `namePrice` by minting some alETH debt using `scoopy` account.
         {
             LibDataTypes.ModuleData memory moduleData =
                 LibDataTypes.ModuleData({modules: new LibDataTypes.Module[](2), args: new bytes[](2)});

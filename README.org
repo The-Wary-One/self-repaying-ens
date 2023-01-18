@@ -17,20 +17,29 @@ The Self Repaying ENS is a smart contract written in Solidity that uses:
 
 ⚠ Prerequisites:
 - Register a ENS name
-- Deposit enough funds to the =alETH= AlchemistV2 contract
+- Deposit enough funds to the =alETH AlchemistV2= contract to cover renewals fees
+- Allow the =AlETHRouter= contract to mint enough =alETH= debt to cover multiple renewals. See the [[https://github.com/The-Wary-One/aleth-router#-how-to-use][AlETHRouter README]]
 
-1. Allow the =AlETHRouter= contract to mint enough =alETH= debt to cover multiple renewals
-2. Allow the =SelfRepayingENS= contract (aka =SRENS=) to use the =AlETHRouter= contract on your behalf
-3. Subscribe to the =SRENS= service for this name
+** To subscribe to the =Self Repayins ENS= renewal service for a name:
+1. Allow the =SelfRepayinENS= contract to use the =AlETHRouter= contract on your behalf by calling =alETHRouter.approve(<srens address>, <approve amount>)=
+2. Subscribe to the =SRENS= service for a name by calling =srens.subscribe(<name>)=. Use the =multicall= feature to subscribe or unsubscribe for multiple names
 
 Voila ! 🥳
 That's it for the user actions.
 
-This is where the automated actions starts
-- Subscribing to the service for this name tells the =Gelato Network= to monitor regularly its expiry
-- Once it expires, =Gelato= tells =SRENS= to renew it
-- To renew it, =SRENS= mint enough =alETH= debt to pay for the renewal and =Gelato= fees in ETH
+This is where the automated actions start:
+ - Subscribing to the service for this name creates a =Gelato= task that regularly checks if the name should be renewed by calling =srens.checker()=. You can get your =taskId= by calling =srens.getTaskId(<your address>, <name>)=
+ - =SRENS= tries to get the lower renewal price by limiting the allowed =gasprice=. You can get the maximum =gasprice= limit for a name by calling =srens.getVariableMaxGasPrice(<name>)=. For more information on the =gasprice= limit formula, checkout the =srens._getVariableMaxGasPrice()= comments
+ - Once =srens.checker()= returns =true= for a name, =Gelato= tells =SRENS= to renew it by calling =srens.renew()=
+ - To renew it, =SRENS= mint enough =alETH= debt to pay for the renewal and =Gelato= fees in =ETH= by calling =alETHRouter.borrowAndSendETHFrom(<your address>, <amount>)= then it calls =ETHRegistrarController.renew()=
 
+** To unsubscribe to the =Self Repaying ENS= renewal service for a name:
+1. unsubscribe to the =SRENS= service for a name by calling =srens.unsubscribe(<name>)=. Use the =multicall= feature to subscribe or unsubscribe for multiple names
+
+Voila ! 🥳
+That's it for the user actions.
+
+- It cancels its corresponding =Gelato= task
 
 * 🚚 How to install
 
