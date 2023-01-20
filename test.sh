@@ -11,4 +11,5 @@ gasprice=30000000000
 # Run the test with the given gas price.
 forge test \
     --gas-price "$gasprice" \
-    -vvv
+    -vvv \
+    --gas-report
