@@ -41,6 +41,5 @@ jobs:
           RPC_MAINNET: ${{ secrets.RPC_MAINNET }}
           BLOCK_NUMBER_MAINNET: 16226770
         run: |
-          NO_COLOR=1 ./test.sh >> $GITHUB_STEP_SUMMARY
-          echo $GITHUB_STEP_SUMMARY
+          ./test.sh
         id: test
