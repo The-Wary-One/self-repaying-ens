@@ -151,30 +151,6 @@ contract SelfRepayingENSTest is Test {
         srens.subscribe(name);
     }
 
-    /// @dev Test `srens.unsubscribe()`'s happy path.
-    function testUnsubscribe() external {
-        // Subscribe once as `scoopy` for `name`.
-        testSubscribe();
-
-        vm.prank(scoopy, scoopy);
-
-        // Unsubscribe to the Self Repaying ENS service for `name`.
-        // `srens` should emit a {Unubscribed} event.
-        vm.expectEmit(true, true, false, false, address(srens));
-        emit Unsubscribe(scoopy, name, name);
-        srens.unsubscribe(name);
-    }
-
-    /// @dev Test `srens.unsubscribe()` reverts when `subscriber` did not subscribe to renew `name`.
-    function testUnsubscribeWhenSubscriberDidNotSubscribe() external {
-        // Act as scoopy, an EOA, for the next call.
-        vm.prank(scoopy, scoopy);
-
-        // Try to subscribe with a ENS name that doesn't exist.
-        vm.expectRevert("Ops.cancelTask: Task not found"); // from Gelato Ops.
-        srens.unsubscribe("dsadsfsdfdsf");
-    }
-
     /// @dev Test `Multicall.multicall()` feature happy path.
     function testMulticall() external {
         // Act as Scoopy, an EOA. Alchemix checks msg.sender === tx.origin to know if sender is an EOA.
@@ -211,6 +187,9 @@ contract SelfRepayingENSTest is Test {
 
     /// @dev Test `srens.checker()`'s happy path.
     function testChecker() external {
+        // Subscribe once as `scoopy` for `name`.
+        testSubscribe();
+
         // Warp to some time before `name` expiry date.
         bytes32 labelHash = keccak256(bytes(name));
         uint256 expiresAt = config.registrar.nameExpires(uint256(labelHash));
@@ -219,12 +198,15 @@ contract SelfRepayingENSTest is Test {
         // Wait for `name` to be in its grace period.
         // `srens` checker function should tell Gelato to execute the task by return true and the its payload.
         (bool canExec, bytes memory execPayload) = srens.checker(name, scoopy);
-        assertTrue(canExec);
-        assertEq(execPayload, abi.encodeCall(srens.renew, (name, scoopy)));
+        assertTrue(canExec, "checker failed");
+        assertEq(execPayload, abi.encodeCall(srens.renew, (name, scoopy)), "execPayload error");
     }
 
     /// @dev Test `srens.checker()`'s returns false when the gas price is too high.
     function testCheckerWhenGasPriceTooHigh() external {
+        // Subscribe once as `scoopy` for `name`.
+        testSubscribe();
+
         // Wait for `name` to be in its grace period.
         bytes32 labelHash = keccak256(bytes(name));
         uint256 expiresAt = config.registrar.nameExpires(uint256(labelHash));
@@ -232,8 +214,8 @@ contract SelfRepayingENSTest is Test {
 
         // `srens` checker function should return false as `name` is not expired.
         (bool canExec, bytes memory execPayload) = srens.checker(name, scoopy);
-        assertFalse(canExec);
-        assertEq(execPayload, bytes("gas price too high"));
+        assertFalse(canExec, "checker failed");
+        assertEq(execPayload, bytes("gasprice too high"), "checker execPayload error");
     }
 
     /// @dev Test the internal function `srens._getVariableMaxGasPrice()` returns the correct gas price limit.
@@ -275,27 +257,31 @@ contract SelfRepayingENSTest is Test {
         assertApproxEqAbs(srens.getVariableMaxGasPrice(name), 50 gwei, 1 gwei);
     }
 
-    /// @dev Test `srens.renew()` reverts when the caller isn't the `GelatoOps` contract.
+    /// @dev Test `srens.renew()` reverts when a `subscriber` did not subcribe to renew `name` and it is not time to renew it.
     function testRenewWhenUnauthorized() external {
         // Act as scoopy, an EOA, for the next call.
         vm.prank(scoopy, scoopy);
 
-        // Try to renew `name` without being the dedicated proxy contract.
+        // Try to renew `name` without being one to renew for `subscriber`.
+        // We do not trust the `Gelato` Executors.
         vm.expectRevert(SelfRepayingENS.Unauthorized.selector);
-        srens.renew(name, scoopy);
+        srens.renew("badname", scoopy);
 
         // Act as GelatoOps.
         vm.prank(address(config.gelatoOps));
 
-        // Try to renew `name` without being the dedicated proxy contract.
+        // Try to renew `name` when its not time to renew it.
         vm.expectRevert(SelfRepayingENS.Unauthorized.selector);
         srens.renew(name, scoopy);
     }
 
     /// @dev Test `srens.renew()` reverts when the user didn't give `srens` enough mint allowance.
     function testRenewWhenNotEnoughMintAllowance() external {
-        // Act as a the dedicated Gelato proxy.
-        vm.prank(address(srens.dedicatedExecutorProxy()));
+        // Subscribe once as `scoopy` for `name`.
+        testSubscribe();
+
+        // Act as a the GelatoOps.
+        vm.prank(address(config.gelatoOps));
 
         // Try to renew `name` without approving `srens` to mint debt.
         vm.expectRevert(stdError.arithmeticError);
@@ -309,8 +295,8 @@ contract SelfRepayingENSTest is Test {
         // Scoopy, the subscriber, needs to allow `srens` to use the `router`.
         config.router.approve(address(srens), 1);
 
-        // Act as a the dedicated Gelato proxy.
-        vm.prank(address(srens.dedicatedExecutorProxy()));
+        // Act as a the GelatoOps.
+        vm.prank(address(config.gelatoOps));
 
         // Try to renew `name` without approving `srens` to mint debt.
         vm.expectRevert(stdError.arithmeticError);
@@ -319,6 +305,9 @@ contract SelfRepayingENSTest is Test {
 
     /// @dev Test `srens.renew()` reverts when the user don't have enough available debt to cover the `name` renewal.
     function testRenewWhenNotEnoughAvailableDebt() external {
+        // Subscribe once as `scoopy` for `name`.
+        testSubscribe();
+
         // Act as Scoopy, an EOA. Alchemix checks msg.sender === tx.origin to know if sender is an EOA.
         vm.startPrank(scoopy, scoopy);
 
@@ -336,12 +325,40 @@ contract SelfRepayingENSTest is Test {
 
         vm.stopPrank();
 
-        // Act as a the dedicated Gelato proxy.
-        vm.prank(address(srens.dedicatedExecutorProxy()));
+        // Act as a the GelatoOps.
+        vm.prank(address(config.gelatoOps));
 
         // Try to renew `name` without enough collateral to cover the renew cost.
         vm.expectRevert(abi.encodeWithSignature("Undercollateralized()"));
         srens.renew(name, scoopy);
+    }
+
+    /// @dev Test `srens.unsubscribe()`'s happy path.
+    function testUnsubscribe() external {
+        // Subscribe once as `scoopy` for `name`.
+        testSubscribe();
+
+        vm.prank(scoopy, scoopy);
+
+        // Unsubscribe to the Self Repaying ENS service for `name`.
+        // `srens` should emit a {Unubscribed} event.
+        vm.expectEmit(true, true, false, false, address(srens));
+        emit Unsubscribe(scoopy, name, name);
+        srens.unsubscribe(name);
+
+        // Try to renew `name`.
+        vm.expectRevert(SelfRepayingENS.Unauthorized.selector);
+        srens.renew(name, scoopy);
+    }
+
+    /// @dev Test `srens.unsubscribe()` reverts when `subscriber` did not subscribe to renew `name`.
+    function testUnsubscribeWhenSubscriberDidNotSubscribe() external {
+        // Act as scoopy, an EOA, for the next call.
+        vm.prank(scoopy, scoopy);
+
+        // Try to subscribe with a ENS name that doesn't exist.
+        vm.expectRevert("Ops.cancelTask: Task not found"); // from Gelato Ops.
+        srens.unsubscribe("dsadsfsdfdsf");
     }
 
     /// @dev Test the happy path of the entire Alchemix + AlETHRouter + SelfRepayingENS + ENS + Gelato interaction.
@@ -373,7 +390,7 @@ contract SelfRepayingENSTest is Test {
         {
             (bool canExec1, bytes memory execPayload1) = srens.checker(name, scoopy);
             assertFalse(canExec1);
-            assertEq(execPayload1, bytes("gas price too high"));
+            assertEq(execPayload1, bytes("gasprice too high"), "exec payload log");
         }
 
         // Wait for `name` to be in its renew period.
@@ -382,7 +399,7 @@ contract SelfRepayingENSTest is Test {
         // `srens` checker function should tell Gelato to execute the task by return true and the its payload.
         (bool canExec, bytes memory execPayload) = srens.checker(name, scoopy);
         assertTrue(canExec);
-        assertEq(execPayload, abi.encodeCall(srens.renew, (name, scoopy)));
+        assertEq(execPayload, abi.encodeCall(srens.renew, (name, scoopy)), "exec payload to exec");
 
         (int256 previousDebt,) = config.alchemist.accounts(scoopy);
         uint256 namePrice = config.controller.rentPrice(name, 365 days);
@@ -395,7 +412,7 @@ contract SelfRepayingENSTest is Test {
 
         // Check `name`'s renewal increased `scoopy`'s Alchemix debt.
         (int256 newDebt,) = config.alchemist.accounts(scoopy);
-        assertTrue(newDebt >= previousDebt + int256(namePrice + gelatoFee));
+        assertTrue(newDebt >= previousDebt + int256(namePrice + gelatoFee), "debt assertion");
     }
 
     /// @dev Test the happy path of the entire user interaction with `srens`.

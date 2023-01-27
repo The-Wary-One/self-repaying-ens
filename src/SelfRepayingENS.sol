@@ -33,11 +33,11 @@ contract SelfRepayingENS is Multicall {
     /// @notice The Gelato Ops contract.
     Ops immutable gelatoOps;
 
-    /// @notice The dedicated Gelato proxy executing the renew tasks.
-    address public immutable dedicatedExecutorProxy;
-
     /// @notice The Gelato address for ETH.
     address constant ETH = 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE;
+
+    /// @notice The names to renew per account.
+    mapping(address => mapping(string => bool)) _subscriberName;
 
     /// @notice An event which is emitted when a user subscribe for an self repaying ENS name renewals.
     ///
@@ -80,8 +80,6 @@ contract SelfRepayingENS is Multicall {
         gelatoOps = _gelatoOps;
 
         gelato = _gelatoOps.gelato();
-        address proxyModule = gelatoOps.taskModuleAddresses(LibDataTypes.Module.PROXY);
-        dedicatedExecutorProxy = ProxyModule(proxyModule).opsProxyFactory().determineProxyAddress(address(this));
     }
 
     /// @notice Subscribe to the self repaying ENS renewals service for `name`.
@@ -110,6 +108,9 @@ contract SelfRepayingENS is Multicall {
         task =
             gelatoOps.createTask(address(this), abi.encode(this.renew.selector), _getModuleData(msg.sender, name), ETH);
 
+        // Add `name` to `subscriber`'s names to renew.
+        _subscriberName[msg.sender][name] = true;
+
         emit Subscribe(msg.sender, name, name);
     }
 
@@ -128,6 +129,9 @@ contract SelfRepayingENS is Multicall {
 
         // Cancel the Gelato task if it exists or reverts.
         gelatoOps.cancelTask(taskId);
+
+        // Remove `name` from `subscriber`'s names to renew.
+        delete _subscriberName[msg.sender][name];
 
         emit Unsubscribe(msg.sender, name, name);
     }
@@ -149,12 +153,15 @@ contract SelfRepayingENS is Multicall {
         returns (bool canExec, bytes memory execPayload)
     {
         unchecked {
-            // Check `name` expiry.
+            // Check `subscriber` subscribed to renew `name`.
+            if (!_subscriberName[subscriber][name]) {
+                return (false, bytes("invalid name"));
+            }
+
             // Try to limit the renew transaction gas price which means limiting the gelato fee.
-            uint256 expiresAt = registrar.nameExpires(uint256(keccak256(bytes(name))));
-            if (tx.gasprice > _getVariableMaxGasPrice(int256(block.timestamp) - int256(expiresAt))) {
+            if (_subscriberName[subscriber][name] && !_isValidGasPrice(name)) {
                 // Log the reason.
-                return (false, bytes("gas price too high"));
+                return (false, bytes("gasprice too high"));
             }
 
             // Return the Gelato task payload to execute. It must call `this.renew(name, subscriber)`.
@@ -164,7 +171,6 @@ contract SelfRepayingENS is Multicall {
 
     /// @notice Renew `name` by minting new debt from `subscriber`'s Alchemix account.
     ///
-    /// @notice **_NOTE:_** This function can only be called by a Gelato Executor.
     /// @notice **_NOTE:_** When renewing, the `AlETHRouter` and the `SelfRepayingENS` contracts must have **allowance()** to mint new alETH debt tokens on behalf of **subscriber** to cover **name** renewal and the Gelato fee costs. This can be done via the `AlchemistV2.approveMint()` and `AlETHRouter.approve()` methods.
     ///
     /// @dev We annotate it payable to make it cheaper. Do not send ETH.
@@ -173,9 +179,8 @@ contract SelfRepayingENS is Multicall {
     /// @param subscriber The address of the subscriber.
     function renew(string calldata name, address subscriber) external payable {
         unchecked {
-            // Only the dedicated Gelato Ops Proxy contract can call this function.
-            // Without it any Gelato task created from other contract could call `renew` for `name` using `subscriber`'s Alchemix account.
-            if (msg.sender != dedicatedExecutorProxy) {
+            // Checks `name` is one of `subscriber`'s names to renew. We do not trust the Gelato Executors.
+            if (!(_subscriberName[subscriber][name] && _isValidGasPrice(name))) {
                 revert Unauthorized();
             }
 
@@ -216,19 +221,25 @@ contract SelfRepayingENS is Multicall {
         return gelatoOps.getTaskId(address(this), address(this), this.renew.selector, moduleData, ETH);
     }
 
+    /// @dev Helper function to check if `tx.gasprice` is lower or equal than `name` gasprice limit.
+    function _isValidGasPrice(string memory name) internal view returns (bool) {
+        // Check `name` expiry.
+        uint256 expiresAt = registrar.nameExpires(uint256(keccak256(bytes(name))));
+        // Try to limit the renew transaction gas price which means limiting the gelato fee.
+        return tx.gasprice <= _getVariableMaxGasPrice(int256(block.timestamp) - int256(expiresAt));
+    }
+
     /// @dev Helper function to get the Gelato module data.
     function _getModuleData(address subscriber, string memory name)
         internal
         view
         returns (LibDataTypes.ModuleData memory moduleData)
     {
-        moduleData = LibDataTypes.ModuleData({modules: new LibDataTypes.Module[](2), args: new bytes[](2)});
+        moduleData = LibDataTypes.ModuleData({modules: new LibDataTypes.Module[](1), args: new bytes[](1)});
 
         moduleData.modules[0] = LibDataTypes.Module.RESOLVER;
-        moduleData.modules[1] = LibDataTypes.Module.PROXY;
 
         moduleData.args[0] = abi.encode(address(this), abi.encodeCall(this.checker, (name, subscriber)));
-        moduleData.args[1] = bytes("");
     }
 
     /// @dev Get the variable maximum gas price for this expired name.
