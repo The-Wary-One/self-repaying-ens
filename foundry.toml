@@ -3,7 +3,7 @@ src = 'src'
 out = 'out'
 libs = ['lib']
 
-gas_reports_ignore = ["Freeloader", "SelfRepayingENSStub", "ToolboxLocal"]
+gas_reports = ["SelfRepayingENS", "AlETHRouter"]
 
 fs_permissions = [
     { access = "read", path = "./deployments/external.json" },
