@@ -12,9 +12,13 @@ import {ProxyModule} from "../lib/ops/contracts/taskModules/ProxyModule.sol";
 import {IOpsProxyFactory} from "../lib/ops/contracts/interfaces/IOpsProxyFactory.sol";
 import {Multicall} from "../lib/openzeppelin/contracts/utils/Multicall.sol";
 
+import {EnumerableSet} from "./libraries/EnumerableSet.sol";
+
 /// @title SelfRepayingENS
 /// @author Wary
 contract SelfRepayingENS is Multicall {
+    using EnumerableSet for EnumerableSet.StringSet;
+
     /// @notice The ENS name renewal duration in seconds.
     uint256 constant renewalDuration = 365 days;
 
@@ -36,11 +40,8 @@ contract SelfRepayingENS is Multicall {
     /// @notice The Gelato address for ETH.
     address constant ETH = 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE;
 
-    /// @notice The names to renew indexes per subscriber.
-    mapping(address => mapping(string => uint256)) _subscriberNameIndex;
-
-    /// @notice All the names to renew per subscriber, used for enumeration.
-    mapping(address => string[]) _subscriberNames;
+    /// @notice The Set of names to renew per subscriber.
+    mapping(address => EnumerableSet.StringSet) internal _subscribedNames;
 
     /// @notice An event which is emitted when a user subscribe for an self repaying ENS name renewals.
     ///
@@ -89,35 +90,32 @@ contract SelfRepayingENS is Multicall {
     ///
     /// @dev It creates a Gelato task to monitor `name`'s expiry. Fees are paid on task execution.
     ///
-    /// @notice `name` must exist or this call will revert an {IllegalArgument} error.
+    /// @notice `name` must exist and not be in `subscriber`'s to be renewed list or this call will revert an {IllegalArgument} error.
     /// @notice Emits a {Subscribed} event.
     ///
     /// @notice **_NOTE:_** The `SelfRepayingENS` contract must have enough `AlETHRouter.allowance()` to renew `name`. The can be done via the `AlETHRouter.approve()` method.
     /// @notice **_NOTE:_** The `msg.sender` must make sure they have enough `AlchemistV2.totalValue()` to cover `name` renewal fee.
     ///
     /// @param name The ENS name to monitor and renew.
-    /// @return task The Gelato task id.
+    /// @return taskId The Gelato task id.
     /// @dev We return the generated task id to simplify the `this.getTaskId()` Solidity test.
-    function subscribe(string memory name) external returns (bytes32 task) {
+    function subscribe(string memory name) external returns (bytes32 taskId) {
         // Check `name` exists and is within its grace period if expired.
         // The ENS grace period is 90 days.
-        if (registrar.nameExpires(uint256(keccak256(bytes(name)))) + 90 days < block.timestamp) {
+        // Checks if `subscriber` already subscribed to renew `name`.
+        if (registrar.nameExpires(uint256(keccak256(bytes(name)))) + 90 days < block.timestamp || _subscribedNames[msg.sender].contains(name)) {
             // The name needs to be registered not renewed.
             revert IllegalArgument();
         }
 
         // Create a gelato task to monitor `name`'s expiry and renew it.
         // We choose to pay Gelato when executing the task.
-        // It checks if the task already exists, i.e. if `subscriber` already subscribed to renew `name`.
-        task =
+        // It checks if the task already exists, but it shouldn't be possible anymore.
+        taskId =
             gelatoOps.createTask(address(this), abi.encode(this.renew.selector), _getModuleData(msg.sender, name), ETH);
 
         // Add `name` to `subscriber`'s names to renew.
-        string[] storage subNames = _subscriberNames[msg.sender];
-        // Save `name` index. The index is the array index + 1 so we know index = 0 means subscriber did not subscribe to renew `name`.
-        _subscriberNameIndex[msg.sender][name] = subNames.length + 1;
-        // Save `name` to `subscriber`'s names to renew.
-        subNames.push(name);
+        _subscribedNames[msg.sender].add(name);
 
         emit Subscribe(msg.sender, name, name);
     }
@@ -139,20 +137,7 @@ contract SelfRepayingENS is Multicall {
         gelatoOps.cancelTask(taskId);
 
         // Remove `name` from `subscriber`'s names to renew.
-        // To prevent a gap in subscriberNames array, we store the last name in the index of the token to delete, and then delete the last slot (copy and pop).
-        // This has O(1) time complexity, but alters the order of the _subscriberNames array.
-        string[] storage subNames = _subscriberNames[msg.sender];
-        mapping(string => uint256) storage subNameIndex = _subscriberNameIndex[msg.sender];
-        // When the name to delete is the last name to renew, the copy operation is unnecessary
-        if (subNames.length > 1) {
-            // Copy the last name in the array to the index of the one to remove.
-            string memory lastName = subNames[subNames.length - 1];
-            uint256 nameIndex = subNameIndex[name];
-            subNames[nameIndex - 1] = lastName; // name indexes start at 1.
-        }
-        // Clean the state.
-        delete subNameIndex[name];
-        subNames.pop();
+        _subscribedNames[msg.sender].remove(name);
 
         emit Unsubscribe(msg.sender, name, name);
     }
@@ -174,8 +159,8 @@ contract SelfRepayingENS is Multicall {
         returns (bool canExec, bytes memory execPayload)
     {
         unchecked {
-            // Check `subscriber` subscribed to renew `name`.
-            if (_subscriberNameIndex[subscriber][name] == 0) {
+            // Check if `subscriber` subscribed to renew `name`.
+            if (!_subscribedNames[subscriber].contains(name)) {
                 return (false, bytes("invalid name"));
             }
 
@@ -201,7 +186,7 @@ contract SelfRepayingENS is Multicall {
     function renew(string calldata name, address subscriber) external payable {
         unchecked {
             // Checks `name` is one of `subscriber`'s names to renew. We do not trust the Gelato Executors.
-            if (!(_subscriberNameIndex[subscriber][name] > 0 && _isValidGasPrice(name))) {
+            if (!(_subscribedNames[subscriber].contains(name) && _isValidGasPrice(name))) {
                 revert Unauthorized();
             }
 
@@ -224,8 +209,12 @@ contract SelfRepayingENS is Multicall {
         }
     }
 
-    function subscriberNames(address subscriber) external view returns (string[] memory) {
-        return _subscriberNames[subscriber];
+    /// @notice Get the Set of names to renew for a subscriber.
+    ///
+    /// @param subscriber The address of the subscriber.
+    /// @return names The Set of names to renew for `subscriber`.
+    function subscribedNames(address subscriber) external view returns (string[] memory names) {
+        return _subscribedNames[subscriber].values();
     }
 
     /// @notice Get the Self Repaying ENS task id created by `subscriber` to renew `name`.
@@ -234,14 +223,10 @@ contract SelfRepayingENS is Multicall {
     ///
     /// @notice **_NOTE:_** This function returns a "random" value if the task does not exists. Make sure you call it with a subscribed `subscriber` for `name`.
     ///
-    /// @param subscriber The address of the task creator (i.e. subscriber).
-    /// @param name The name to monitor and renew.
-    /// @return The task id.
-    /// @dev This is a Gelato task id.
-    ///
-    /// @param name The ENS name to renew.
     /// @param subscriber The address of the subscriber.
-    function getTaskId(address subscriber, string memory name) public view returns (bytes32) {
+    /// @param name The name to monitor and renew.
+    /// @return taskId The Gelato task id.
+    function getTaskId(address subscriber, string memory name) public view returns (bytes32 taskId) {
         LibDataTypes.ModuleData memory moduleData = _getModuleData(subscriber, name);
         return gelatoOps.getTaskId(address(this), address(this), this.renew.selector, moduleData, ETH);
     }

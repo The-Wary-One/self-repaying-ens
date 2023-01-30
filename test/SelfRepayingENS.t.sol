@@ -100,8 +100,8 @@ contract SelfRepayingENSTest is Test {
         // `srens.getTaskId()` should return the same task id.
         assertEq(srens.getTaskId(scoopy, name), task);
 
-        // `srens.subscriberNames()` should be updated.
-        string[] memory names = srens.subscriberNames(scoopy);
+        // `srens.subscribedNames()` should be updated.
+        string[] memory names = srens.subscribedNames(scoopy);
         assertEq(names.length, 1);
         assertEq(names[0], name);
     }
@@ -137,7 +137,7 @@ contract SelfRepayingENSTest is Test {
         vm.prank(scoopy, scoopy);
 
         // Try to subscribe a second time as `scoopy`.
-        vm.expectRevert("Ops.createTask: Duplicate task"); // from GelatoOps.
+        vm.expectRevert(SelfRepayingENS.IllegalArgument.selector);
         srens.subscribe(name);
     }
 
@@ -175,8 +175,8 @@ contract SelfRepayingENSTest is Test {
         emit Unsubscribe(scoopy, name, name);
         srens.multicall(data);
 
-        // `srens.subscriberNames()` should be updated.
-        string[] memory names = srens.subscriberNames(scoopy);
+        // `srens.subscribedNames()` should be updated.
+        string[] memory names = srens.subscribedNames(scoopy);
         assertEq(names.length, 1);
         assertEq(names[0], "alchemix");
     }
@@ -360,8 +360,8 @@ contract SelfRepayingENSTest is Test {
         vm.expectRevert(SelfRepayingENS.Unauthorized.selector);
         srens.renew(name, scoopy);
 
-        // `srens.subscriberNames()` should be updated.
-        string[] memory names = srens.subscriberNames(scoopy);
+        // `srens.subscribedNames()` should be updated.
+        string[] memory names = srens.subscribedNames(scoopy);
         assertEq(names.length, 0);
     }
 
