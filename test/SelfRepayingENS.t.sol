@@ -99,6 +99,11 @@ contract SelfRepayingENSTest is Test {
 
         // `srens.getTaskId()` should return the same task id.
         assertEq(srens.getTaskId(scoopy, name), task);
+
+        // `srens.subscriberNames()` should be updated.
+        string[] memory names = srens.subscriberNames(scoopy);
+        assertEq(names.length, 1);
+        assertEq(names[0], name);
     }
 
     /// @dev Test `srens.subscribe()` reverts when inputing a ENS name that doesn't exist.
@@ -169,6 +174,11 @@ contract SelfRepayingENSTest is Test {
         vm.expectEmit(true, true, false, false, address(srens));
         emit Unsubscribe(scoopy, name, name);
         srens.multicall(data);
+
+        // `srens.subscriberNames()` should be updated.
+        string[] memory names = srens.subscriberNames(scoopy);
+        assertEq(names.length, 1);
+        assertEq(names[0], "alchemix");
     }
 
     /// @dev Test `Multicall.multicall()` feature reverts the entire transaction on revert.
@@ -349,6 +359,10 @@ contract SelfRepayingENSTest is Test {
         // Try to renew `name`.
         vm.expectRevert(SelfRepayingENS.Unauthorized.selector);
         srens.renew(name, scoopy);
+
+        // `srens.subscriberNames()` should be updated.
+        string[] memory names = srens.subscriberNames(scoopy);
+        assertEq(names.length, 0);
     }
 
     /// @dev Test `srens.unsubscribe()` reverts when `subscriber` did not subscribe to renew `name`.
