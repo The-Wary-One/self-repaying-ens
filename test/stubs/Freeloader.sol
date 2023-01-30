@@ -15,10 +15,16 @@ contract Freeloader {
     }
 
     function subscribe(string memory name, address subscriber) external returns (bytes32 taskId) {
-        taskId = gelatoOps.createTask(address(srens), abi.encode(srens.renew.selector), _getModuleData(subscriber, name), ETH);
+        taskId = gelatoOps.createTask(
+            address(srens), abi.encode(srens.renew.selector), _getModuleData(subscriber, name), ETH
+        );
     }
 
-    function checker(address subscriber, string memory name) external view returns (bool canExec, bytes memory execPayload) {
+    function checker(address subscriber, string memory name)
+        external
+        view
+        returns (bool canExec, bytes memory execPayload)
+    {
         return (true, abi.encodeCall(srens.renew, (name, subscriber)));
     }
 

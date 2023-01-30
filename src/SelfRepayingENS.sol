@@ -151,11 +151,7 @@ contract SelfRepayingENS is Multicall {
     /// @dev It tells Gelato when to execute the task (i.e. when it is true).
     /// @return execPayload The abi encoded call to execute.
     /// @dev It tells Gelato how to execute the task.
-    function checker(address subscriber)
-        external
-        view
-        returns (bool canExec, bytes memory execPayload)
-    {
+    function checker(address subscriber) external view returns (bool canExec, bytes memory execPayload) {
         unchecked {
             // We loop over `subscriber`'s names to find the most expensive renewable name since it is the closest to its expiry.
             EnumerableSet.StringSet storage subNames = _subscribedNames[subscriber];
@@ -238,11 +234,7 @@ contract SelfRepayingENS is Multicall {
     }
 
     /// @dev Helper function to get the Gelato module data.
-    function _getModuleData(address subscriber)
-        internal
-        view
-        returns (LibDataTypes.ModuleData memory moduleData)
-    {
+    function _getModuleData(address subscriber) internal view returns (LibDataTypes.ModuleData memory moduleData) {
         moduleData = LibDataTypes.ModuleData({modules: new LibDataTypes.Module[](1), args: new bytes[](1)});
 
         moduleData.modules[0] = LibDataTypes.Module.RESOLVER;

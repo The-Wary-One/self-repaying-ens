@@ -529,7 +529,7 @@ contract SelfRepayingENSTest is Test {
 
         // Gelato now execute the defined task.
         // `srens` called by Gelato should not renew `otherName` by minting some alETH debt using `scoopy` account.
-       LibDataTypes.ModuleData memory moduleData = freeloader._getModuleData(scoopy, otherName);
+        LibDataTypes.ModuleData memory moduleData = freeloader._getModuleData(scoopy, otherName);
         vm.prank(config.gelato);
         // It should not be possible !
         vm.expectRevert("Ops.exec: NoErrorSelector");
