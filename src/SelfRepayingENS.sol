@@ -63,9 +63,6 @@ contract SelfRepayingENS is Multicall {
     /// @notice An error used to indicate that an action could not be completed because of an illegal argument was passed to the function.
     error IllegalArgument();
 
-    /// @notice An error used to indicate that a caller is not authorized to perform an action.
-    error Unauthorized();
-
     /// @notice An error used to indicate that a transfer failed.
     error FailedTransfer();
 
@@ -88,7 +85,7 @@ contract SelfRepayingENS is Multicall {
 
     /// @notice Subscribe to the self repaying ENS renewals service for `name`.
     ///
-    /// @dev It creates a Gelato task to monitor `name`'s expiry. Fees are paid on task execution.
+    /// @dev It creates ONCE a Gelato task to monitor `subscriber`'s subscribed names expiry. Fees are paid on task execution.
     ///
     /// @notice `name` must exist and not be in `subscriber`'s to be renewed list or this call will revert an {IllegalArgument} error.
     /// @notice Emits a {Subscribed} event.
@@ -98,27 +95,28 @@ contract SelfRepayingENS is Multicall {
     ///
     /// @param name The ENS name to monitor and renew.
     /// @return taskId The Gelato task id.
-    /// @dev We return the generated task id to simplify the `this.getTaskId()` Solidity test.
+    /// @dev We return the generated task id ONCE to simplify the `this.getTaskId()` Solidity test.
     function subscribe(string memory name) external returns (bytes32 taskId) {
+        EnumerableSet.StringSet storage subNames = _subscribedNames[msg.sender];
         // Check `name` exists and is within its grace period if expired.
         // The ENS grace period is 90 days.
         // Checks if `subscriber` already subscribed to renew `name`.
         if (
             registrar.nameExpires(uint256(keccak256(bytes(name)))) + 90 days < block.timestamp
-                || _subscribedNames[msg.sender].contains(name)
+                || subNames.contains(name)
         ) {
-            // The name needs to be registered not renewed.
             revert IllegalArgument();
         }
 
-        // Create a gelato task to monitor `name`'s expiry and renew it.
+        // Create ONCE a gelato task to monitor `subscriber`'s names expiry and renew them.
         // We choose to pay Gelato when executing the task.
-        // It checks if the task already exists, but it shouldn't be possible anymore.
-        taskId =
-            gelatoOps.createTask(address(this), abi.encode(this.renew.selector), _getModuleData(msg.sender, name), ETH);
+        if (subNames.length() == 0) {
+            taskId =
+                gelatoOps.createTask(address(this), abi.encode(this.renew.selector), _getModuleData(msg.sender), ETH);
+        }
 
         // Add `name` to `subscriber`'s names to renew.
-        _subscribedNames[msg.sender].add(name);
+        subNames.add(name);
 
         emit Subscribe(msg.sender, name, name);
     }
@@ -131,50 +129,55 @@ contract SelfRepayingENS is Multicall {
     ///
     /// @param name The ENS name to not monitor anymore.
     function unsubscribe(string memory name) external {
-        // Get the Gelato task id.
-        // This way is cheaper than using a mapping from subscriber`s address to taskId but returns a random value if the caller did not subscribe for `name`.
-        // The taskId is checked by Gelato in the `cancelTask` below.
-        bytes32 taskId = getTaskId(msg.sender, name);
-
-        // Cancel the Gelato task if it exists or reverts.
-        gelatoOps.cancelTask(taskId);
+        // Not cancelling `msg.sender`'s Gelato task make the last unsubscribe and its following subscribe cheaper.
 
         // Remove `name` from `subscriber`'s names to renew.
-        _subscribedNames[msg.sender].remove(name);
+        bool removed = _subscribedNames[msg.sender].remove(name);
+        // Revert if `name` was not part of `subscriber`'s names to renew.
+        if (!removed) {
+            revert IllegalArgument();
+        }
 
         emit Unsubscribe(msg.sender, name, name);
     }
 
-    /// @notice Check if `name` should be renewed.
+    /// @notice Check if some of `subscriber`'s names should be renewed.
     ///
     /// @dev This is a Gelato resolver function. It is called by their network to know when and how to execute the renew task.
     ///
-    /// @param name The ENS name whose expiry is checked.
     /// @param subscriber The address of the subscriber.
     ///
-    /// @return canExec The bool is true when `name` is expired.
+    /// @return canExec The bool is true when some name is expired.
     /// @dev It tells Gelato when to execute the task (i.e. when it is true).
     /// @return execPayload The abi encoded call to execute.
-    /// @dev It tells Gelato how to execute the task. We use this view function to prepare all the possible data for free and make the renewal cheaper.
-    function checker(string memory name, address subscriber)
+    /// @dev It tells Gelato how to execute the task.
+    function checker(address subscriber)
         external
         view
         returns (bool canExec, bytes memory execPayload)
     {
         unchecked {
-            // Check if `subscriber` subscribed to renew `name`.
-            if (!_subscribedNames[subscriber].contains(name)) {
-                return (false, bytes("invalid name"));
+            // We loop over `subscriber`'s names to find the most expensive renewable name since it is the closest to its expiry.
+            EnumerableSet.StringSet storage subNames = _subscribedNames[subscriber];
+            uint256 len = subNames.length();
+            uint256 highestLimit;
+            string memory mostExpensiveNameToRenew;
+
+            for (uint256 i; i < len; i++) {
+                string memory name = subNames.at(i);
+                // Try to limit the renew transaction gas price which means limiting the gelato fee.
+                uint256 nameGasPriceLimit = getVariableMaxGasPrice(name);
+                if (tx.gasprice <= nameGasPriceLimit && nameGasPriceLimit > highestLimit) {
+                    highestLimit = nameGasPriceLimit;
+                    mostExpensiveNameToRenew = name;
+                }
             }
 
-            // Try to limit the renew transaction gas price which means limiting the gelato fee.
-            if (!_isValidGasPrice(name)) {
+            return highestLimit == 0
                 // Log the reason.
-                return (false, bytes("gasprice too high"));
-            }
-
-            // Return the Gelato task payload to execute. It must call `this.renew(name, subscriber)`.
-            return (true, abi.encodeCall(this.renew, (name, subscriber)));
+                ? (false, bytes("no names to renew"))
+                // Return the Gelato task payload to execute. It must call `this.renew(name, subscriber)`.
+                : (true, abi.encodeCall(this.renew, (mostExpensiveNameToRenew, subscriber)));
         }
     }
 
@@ -182,6 +185,7 @@ contract SelfRepayingENS is Multicall {
     ///
     /// @notice **_NOTE:_** When renewing, the `AlETHRouter` and the `SelfRepayingENS` contracts must have **allowance()** to mint new alETH debt tokens on behalf of **subscriber** to cover **name** renewal and the Gelato fee costs. This can be done via the `AlchemistV2.approveMint()` and `AlETHRouter.approve()` methods.
     ///
+    /// @dev It is called by the `GelatoOps` contract.
     /// @dev We annotate it payable to make it cheaper. Do not send ETH.
     ///
     /// @param name The ENS name to renew.
@@ -189,8 +193,8 @@ contract SelfRepayingENS is Multicall {
     function renew(string calldata name, address subscriber) external payable {
         unchecked {
             // Checks `name` is one of `subscriber`'s names to renew. We do not trust the Gelato Executors.
-            if (!(_subscribedNames[subscriber].contains(name) && _isValidGasPrice(name))) {
-                revert Unauthorized();
+            if (!(_subscribedNames[subscriber].contains(name) && tx.gasprice <= getVariableMaxGasPrice(name))) {
+                revert IllegalArgument();
             }
 
             // Get `name` rent price.
@@ -220,30 +224,21 @@ contract SelfRepayingENS is Multicall {
         return _subscribedNames[subscriber].values();
     }
 
-    /// @notice Get the Self Repaying ENS task id created by `subscriber` to renew `name`.
+    /// @notice Get the Self Repaying ENS task id created by `subscriber`.
     ///
     /// @dev This is a helper function to get a Gelato task id.
     ///
-    /// @notice **_NOTE:_** This function returns a "random" value if the task does not exists. Make sure you call it with a subscribed `subscriber` for `name`.
+    /// @notice **_NOTE:_** This function returns a "random" value if the task does not exists. Make sure you call it with a subscribed `subscriber`.
     ///
     /// @param subscriber The address of the subscriber.
-    /// @param name The name to monitor and renew.
     /// @return taskId The Gelato task id.
-    function getTaskId(address subscriber, string memory name) public view returns (bytes32 taskId) {
-        LibDataTypes.ModuleData memory moduleData = _getModuleData(subscriber, name);
+    function getTaskId(address subscriber) public view returns (bytes32 taskId) {
+        LibDataTypes.ModuleData memory moduleData = _getModuleData(subscriber);
         return gelatoOps.getTaskId(address(this), address(this), this.renew.selector, moduleData, ETH);
     }
 
-    /// @dev Helper function to check if `tx.gasprice` is lower or equal than `name` gasprice limit.
-    function _isValidGasPrice(string memory name) internal view returns (bool) {
-        // Check `name` expiry.
-        uint256 expiresAt = registrar.nameExpires(uint256(keccak256(bytes(name))));
-        // Try to limit the renew transaction gas price which means limiting the gelato fee.
-        return tx.gasprice <= _getVariableMaxGasPrice(int256(block.timestamp) - int256(expiresAt));
-    }
-
     /// @dev Helper function to get the Gelato module data.
-    function _getModuleData(address subscriber, string memory name)
+    function _getModuleData(address subscriber)
         internal
         view
         returns (LibDataTypes.ModuleData memory moduleData)
@@ -252,14 +247,14 @@ contract SelfRepayingENS is Multicall {
 
         moduleData.modules[0] = LibDataTypes.Module.RESOLVER;
 
-        moduleData.args[0] = abi.encode(address(this), abi.encodeCall(this.checker, (name, subscriber)));
+        moduleData.args[0] = abi.encode(address(this), abi.encodeCall(this.checker, (subscriber)));
     }
 
     /// @dev Get the variable maximum gas price for this expired name.
     ///
     /// @param name The ENS name to renew.
     /// @return The maximum gas price in wei allowed to renew `name`.
-    function getVariableMaxGasPrice(string calldata name) external view returns (uint256) {
+    function getVariableMaxGasPrice(string memory name) public view returns (uint256) {
         unchecked {
             uint256 expiryDate = registrar.nameExpires(uint256(keccak256(bytes(name))));
             return _getVariableMaxGasPrice(int256(block.timestamp) - int256(expiryDate));

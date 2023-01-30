@@ -17,7 +17,7 @@ contract ToolboxLocal is Toolbox {
     }
 
     /// @dev Get the Gelato module data.
-    function getModuleData(SelfRepayingENS srens, string memory name, address subscriber)
+    function getModuleData(SelfRepayingENS srens, address subscriber)
         public
         pure
         returns (LibDataTypes.ModuleData memory moduleData)
@@ -26,7 +26,7 @@ contract ToolboxLocal is Toolbox {
 
         moduleData.modules[0] = LibDataTypes.Module.RESOLVER;
 
-        moduleData.args[0] = abi.encode(address(srens), abi.encodeCall(srens.checker, (name, subscriber)));
+        moduleData.args[0] = abi.encode(address(srens), abi.encodeCall(srens.checker, (subscriber)));
     }
 
     /// @dev Deploy the AlETHRouter contract on the local chain.

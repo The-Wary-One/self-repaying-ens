@@ -98,7 +98,7 @@ contract SelfRepayingENSTest is Test {
         bytes32 task = srens.subscribe(name);
 
         // `srens.getTaskId()` should return the same task id.
-        assertEq(srens.getTaskId(scoopy, name), task);
+        assertEq(srens.getTaskId(scoopy), task);
 
         // `srens.subscribedNames()` should be updated.
         string[] memory names = srens.subscribedNames(scoopy);
@@ -154,6 +154,15 @@ contract SelfRepayingENSTest is Test {
         vm.expectEmit(true, true, false, false, address(srens));
         emit Subscribe(address(0x1), name, name);
         srens.subscribe(name);
+
+        // `srens.subscribedNames(address(0x1))` should be updated.
+        string[] memory names = srens.subscribedNames(address(0x1));
+        assertEq(names.length, 1);
+        assertEq(names[0], name);
+        // `srens.subscribedNames(scoopy)` shouldn't be updated.
+        names = srens.subscribedNames(scoopy);
+        assertEq(names.length, 1);
+        assertEq(names[0], name);
     }
 
     /// @dev Test `Multicall.multicall()` feature happy path.
@@ -197,19 +206,28 @@ contract SelfRepayingENSTest is Test {
 
     /// @dev Test `srens.checker()`'s happy path.
     function testChecker() external {
-        // Subscribe once as `scoopy` for `name`.
-        testSubscribe();
+        // Subscribe as `scoopy` for `name` and "alchemix".
+        vm.startPrank(scoopy, scoopy);
+        srens.subscribe("alchemix"); // Expiry in 2026.09.21 at 13:24 (UTC+02:00).
+        srens.subscribe(name);
 
         // Warp to some time before `name` expiry date.
         bytes32 labelHash = keccak256(bytes(name));
         uint256 expiresAt = config.registrar.nameExpires(uint256(labelHash));
         vm.warp(expiresAt - 4 days);
 
-        // Wait for `name` to be in its grace period.
-        // `srens` checker function should tell Gelato to execute the task by return true and the its payload.
-        (bool canExec, bytes memory execPayload) = srens.checker(name, scoopy);
+        // `srens` checker function should tell Gelato to renew `name` since it's the closest to its expiry.
+        (bool canExec, bytes memory execPayload) = srens.checker(scoopy);
         assertTrue(canExec, "checker failed");
         assertEq(execPayload, abi.encodeCall(srens.renew, (name, scoopy)), "execPayload error");
+    }
+
+    /// @dev Test `srens.checker()`'s returns false when there is no name to renew.
+    function testCheckerWhenNoNameToRenew() external {
+        // `srens` checker function should return false as there is no name to renew.
+        (bool canExec, bytes memory execPayload) = srens.checker(scoopy);
+        assertFalse(canExec, "checker failed");
+        assertEq(execPayload, bytes("no names to renew"), "checker execPayload error");
     }
 
     /// @dev Test `srens.checker()`'s returns false when the gas price is too high.
@@ -223,9 +241,9 @@ contract SelfRepayingENSTest is Test {
         vm.warp(expiresAt - 80 days);
 
         // `srens` checker function should return false as `name` is not expired.
-        (bool canExec, bytes memory execPayload) = srens.checker(name, scoopy);
+        (bool canExec, bytes memory execPayload) = srens.checker(scoopy);
         assertFalse(canExec, "checker failed");
-        assertEq(execPayload, bytes("gasprice too high"), "checker execPayload error");
+        assertEq(execPayload, bytes("no names to renew"), "checker execPayload error");
     }
 
     /// @dev Test the internal function `srens._getVariableMaxGasPrice()` returns the correct gas price limit.
@@ -268,20 +286,20 @@ contract SelfRepayingENSTest is Test {
     }
 
     /// @dev Test `srens.renew()` reverts when a `subscriber` did not subcribe to renew `name` and it is not time to renew it.
-    function testRenewWhenUnauthorized() external {
+    function testRenewWhenIllegalArgument() external {
         // Act as scoopy, an EOA, for the next call.
         vm.prank(scoopy, scoopy);
 
         // Try to renew `name` without being one to renew for `subscriber`.
         // We do not trust the `Gelato` Executors.
-        vm.expectRevert(SelfRepayingENS.Unauthorized.selector);
+        vm.expectRevert(SelfRepayingENS.IllegalArgument.selector);
         srens.renew("badname", scoopy);
 
         // Act as GelatoOps.
         vm.prank(address(config.gelatoOps));
 
         // Try to renew `name` when its not time to renew it.
-        vm.expectRevert(SelfRepayingENS.Unauthorized.selector);
+        vm.expectRevert(SelfRepayingENS.IllegalArgument.selector);
         srens.renew(name, scoopy);
     }
 
@@ -357,7 +375,7 @@ contract SelfRepayingENSTest is Test {
         srens.unsubscribe(name);
 
         // Try to renew `name`.
-        vm.expectRevert(SelfRepayingENS.Unauthorized.selector);
+        vm.expectRevert(SelfRepayingENS.IllegalArgument.selector);
         srens.renew(name, scoopy);
 
         // `srens.subscribedNames()` should be updated.
@@ -371,7 +389,7 @@ contract SelfRepayingENSTest is Test {
         vm.prank(scoopy, scoopy);
 
         // Try to subscribe with a ENS name that doesn't exist.
-        vm.expectRevert("Ops.cancelTask: Task not found"); // from Gelato Ops.
+        vm.expectRevert(SelfRepayingENS.IllegalArgument.selector);
         srens.unsubscribe("dsadsfsdfdsf");
     }
 
@@ -402,16 +420,16 @@ contract SelfRepayingENSTest is Test {
 
         // `srens` checker function should return false if gas price is too high to renew.
         {
-            (bool canExec1, bytes memory execPayload1) = srens.checker(name, scoopy);
+            (bool canExec1, bytes memory execPayload1) = srens.checker(scoopy);
             assertFalse(canExec1);
-            assertEq(execPayload1, bytes("gasprice too high"), "exec payload log");
+            assertEq(execPayload1, bytes("no names to renew"), "exec payload log");
         }
 
         // Wait for `name` to be in its renew period.
         vm.warp(expiresAt - 10 days);
 
         // `srens` checker function should tell Gelato to execute the task by return true and the its payload.
-        (bool canExec, bytes memory execPayload) = srens.checker(name, scoopy);
+        (bool canExec, bytes memory execPayload) = srens.checker(scoopy);
         assertTrue(canExec);
         assertEq(execPayload, abi.encodeCall(srens.renew, (name, scoopy)), "exec payload to exec");
 
@@ -448,7 +466,7 @@ contract SelfRepayingENSTest is Test {
         vm.warp(expiresAt + 1 days);
 
         // `srens` checker function should tell Gelato to execute the task by return true and the its payload.
-        (bool canExec, bytes memory execPayload) = srens.checker(name, scoopy);
+        (bool canExec, bytes memory execPayload) = srens.checker(scoopy);
         assertTrue(canExec);
         assertEq(execPayload, abi.encodeCall(srens.renew, (name, scoopy)));
 
@@ -503,44 +521,33 @@ contract SelfRepayingENSTest is Test {
         // Deploy the Freeloader contract to use `scoopy`'s account to renew `otherName`.
         Freeloader freeloader = new Freeloader(
             srens,
-            config.gelatoOps,
-            scoopy
+            config.gelatoOps
         );
 
-        freeloader.subscribe(otherName);
+        freeloader.subscribe(otherName, scoopy);
         vm.stopPrank();
 
         // Gelato now execute the defined task.
-        // `srens` called by Gelato should not renew `otherName` for `renewalDuration` and `namePrice` by minting some alETH debt using `scoopy` account.
-        {
-            LibDataTypes.ModuleData memory moduleData =
-                LibDataTypes.ModuleData({modules: new LibDataTypes.Module[](2), args: new bytes[](2)});
-
-            moduleData.modules[0] = LibDataTypes.Module.RESOLVER;
-            moduleData.modules[1] = LibDataTypes.Module.PROXY;
-
-            moduleData.args[0] = abi.encode(address(srens), abi.encodeCall(srens.checker, (otherName, scoopy)));
-            moduleData.args[1] = bytes("");
-
-            vm.prank(config.gelato);
-            // It should not be possible !
-            vm.expectRevert("Ops.exec: OpsProxy.executeCall: NoErrorSelector");
-            config.gelatoOps.exec(
-                address(freeloader),
-                address(srens),
-                abi.encodeCall(srens.renew, (otherName, scoopy)),
-                moduleData,
-                gelatoFee,
-                ETH,
-                false,
-                true
-            );
-        }
+        // `srens` called by Gelato should not renew `otherName` by minting some alETH debt using `scoopy` account.
+       LibDataTypes.ModuleData memory moduleData = freeloader._getModuleData(scoopy, otherName);
+        vm.prank(config.gelato);
+        // It should not be possible !
+        vm.expectRevert("Ops.exec: NoErrorSelector");
+        config.gelatoOps.exec(
+            address(freeloader),
+            address(srens),
+            abi.encodeCall(srens.renew, (otherName, scoopy)),
+            moduleData,
+            gelatoFee,
+            ETH,
+            false,
+            true
+        );
     }
 
     /// @dev Simulate a Gelato Ops call with fees.
     function execRenewTask(uint256 fee, string memory _name, address subscriber) internal {
-        LibDataTypes.ModuleData memory moduleData = toolbox.getModuleData(srens, _name, subscriber);
+        LibDataTypes.ModuleData memory moduleData = toolbox.getModuleData(srens, subscriber);
 
         // Act as the Gelato main contract.
         vm.prank(config.gelato);

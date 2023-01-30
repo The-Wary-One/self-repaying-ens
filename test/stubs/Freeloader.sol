@@ -7,25 +7,30 @@ import "../../src/SelfRepayingENS.sol";
 contract Freeloader {
     SelfRepayingENS immutable srens;
     Ops public immutable gelatoOps;
-    address immutable subscriber;
     address constant ETH = 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE;
 
-    constructor(SelfRepayingENS _srens, Ops _gelatoOps, address _subscriber) {
+    constructor(SelfRepayingENS _srens, Ops _gelatoOps) {
         srens = _srens;
         gelatoOps = _gelatoOps;
-        subscriber = _subscriber;
     }
 
-    function subscribe(string memory name) external returns (bytes32 task) {
-        LibDataTypes.ModuleData memory moduleData =
-            LibDataTypes.ModuleData({modules: new LibDataTypes.Module[](2), args: new bytes[](2)});
+    function subscribe(string memory name, address subscriber) external returns (bytes32 taskId) {
+        taskId = gelatoOps.createTask(address(srens), abi.encode(srens.renew.selector), _getModuleData(subscriber, name), ETH);
+    }
+
+    function checker(address subscriber, string memory name) external view returns (bool canExec, bytes memory execPayload) {
+        return (true, abi.encodeCall(srens.renew, (name, subscriber)));
+    }
+
+    function _getModuleData(address subscriber, string memory name)
+        public
+        view
+        returns (LibDataTypes.ModuleData memory moduleData)
+    {
+        moduleData = LibDataTypes.ModuleData({modules: new LibDataTypes.Module[](1), args: new bytes[](1)});
 
         moduleData.modules[0] = LibDataTypes.Module.RESOLVER;
-        moduleData.modules[1] = LibDataTypes.Module.PROXY;
 
-        moduleData.args[0] = abi.encode(address(srens), abi.encodeCall(srens.checker, (name, subscriber)));
-        moduleData.args[1] = bytes("");
-
-        task = gelatoOps.createTask(address(srens), abi.encode(srens.renew.selector), moduleData, ETH);
+        moduleData.args[0] = abi.encode(address(this), abi.encodeCall(this.checker, (subscriber, name)));
     }
 }
