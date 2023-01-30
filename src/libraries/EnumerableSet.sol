@@ -3,7 +3,6 @@ pragma solidity ^0.8.17;
 
 /// @dev See {@openzeppelin/contracts/utils/structs/EnumerableSet.sol}.
 library EnumerableSet {
-
     struct StringSet {
         // Storage of set values.
         string[] _values;

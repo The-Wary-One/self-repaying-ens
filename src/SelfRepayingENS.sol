@@ -103,7 +103,10 @@ contract SelfRepayingENS is Multicall {
         // Check `name` exists and is within its grace period if expired.
         // The ENS grace period is 90 days.
         // Checks if `subscriber` already subscribed to renew `name`.
-        if (registrar.nameExpires(uint256(keccak256(bytes(name)))) + 90 days < block.timestamp || _subscribedNames[msg.sender].contains(name)) {
+        if (
+            registrar.nameExpires(uint256(keccak256(bytes(name)))) + 90 days < block.timestamp
+                || _subscribedNames[msg.sender].contains(name)
+        ) {
             // The name needs to be registered not renewed.
             revert IllegalArgument();
         }
