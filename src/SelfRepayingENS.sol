@@ -207,6 +207,8 @@ contract SelfRepayingENS is Multicall {
             controller.renew{value: namePrice}(name, renewalDuration);
 
             // Pay the Gelato executor with all the ETH left. No ETH will be stuck in this contract.
+            // Do not pay Gelato if `renew()` was called by someone else.
+            if (msg.sender != address(gelatoOps)) return;
             (bool success,) = gelato.call{value: address(this).balance}("");
             if (!success) revert FailedTransfer();
         }
