@@ -95,15 +95,39 @@ contract SelfRepayingENSTest is Test {
         // `srens` should emit a {Subscribed} event.
         vm.expectEmit(true, true, false, false, address(srens));
         emit Subscribe(scoopy, name, name);
-        bytes32 task = srens.subscribe(name);
+        bytes32 taskId = srens.subscribe(name);
 
         // `srens.getTaskId()` should return the same task id.
-        assertEq(srens.getTaskId(scoopy), task);
+        assertEq(srens.getTaskId(scoopy), taskId);
 
         // `srens.subscribedNames()` should be updated.
         string[] memory names = srens.subscribedNames(scoopy);
         assertEq(names.length, 1);
         assertEq(names[0], name);
+    }
+
+    function testSubscribeMultipleTimes() external {
+        // Subscribe once as `scoopy` for `name`.
+        testSubscribe();
+
+        // Act as scoopy, an EOA.
+        vm.prank(scoopy, scoopy);
+
+        // Subscribe to the Self Repaying ENS service for `name`.
+        // `srens` should emit a {Subscribed} event.
+        vm.expectEmit(true, true, false, false, address(srens));
+        emit Subscribe(scoopy, "alchemix", "alchemix");
+        // It shouldn't create task.
+        bytes32 taskId = srens.subscribe("alchemix");
+
+        // `srens.getTaskId()` should return the same task id.
+        assertEq(taskId, 0);
+
+        // `srens.subscribedNames()` should be updated.
+        string[] memory names = srens.subscribedNames(scoopy);
+        assertEq(names.length, 2);
+        assertEq(names[0], name);
+        assertEq(names[1], "alchemix");
     }
 
     /// @dev Test `srens.subscribe()` reverts when inputing a ENS name that doesn't exist.
@@ -210,6 +234,7 @@ contract SelfRepayingENSTest is Test {
         vm.startPrank(scoopy, scoopy);
         srens.subscribe("alchemix"); // Expiry in 2026.09.21 at 13:24 (UTC+02:00).
         srens.subscribe(name);
+        vm.stopPrank();
 
         // Warp to some time before `name` expiry date.
         bytes32 labelHash = keccak256(bytes(name));
