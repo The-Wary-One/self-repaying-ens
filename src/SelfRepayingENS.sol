@@ -159,6 +159,7 @@ contract SelfRepayingENS is Multicall {
             uint256 highestLimit;
             string memory mostExpensiveNameToRenew;
 
+            // ⚠️ The loop is unbounded but we access each element from storage to avoid the in memory copy of the entire array.
             for (uint256 i; i < len; i++) {
                 string memory name = subNames.at(i);
                 // Try to limit the renew transaction gas price which means limiting the gelato fee.

@@ -28,7 +28,7 @@ Voila ! 🥳
 That's it for the user actions.
 
 This is where the automated actions start:
- - Subscribing to the service for this name creates a =Gelato= task that regularly checks if the name should be renewed by calling =srens.checker()=. You can get your =taskId= by calling =srens.getTaskId(<your address>, <name>)=
+ - Subscribing for the first time to the service creates a =Gelato= task that regularly checks if your names should be renewed by calling =srens.checker()=. You can get your =taskId= by calling =srens.getTaskId(<your address>)=
  - =SRENS= tries to get the lower renewal price by limiting the allowed =gasprice=. You can get the maximum =gasprice= limit for a name by calling =srens.getVariableMaxGasPrice(<name>)=. For more information on the =gasprice= limit formula, checkout the =srens._getVariableMaxGasPrice()= comments
  - Once =srens.checker()= returns =true= for a name, =Gelato= tells =SRENS= to renew it by calling =srens.renew()=
  - To renew it, =SRENS= mint enough =alETH= debt to pay for the renewal and =Gelato= fees in =ETH= by calling =alETHRouter.borrowAndSendETHFrom(<your address>, <amount>)= then it calls =ETHRegistrarController.renew()=
@@ -39,7 +39,6 @@ This is where the automated actions start:
 Voila ! 🥳
 That's it for the user actions.
 
-- It cancels its corresponding =Gelato= task
 
 * 🚚 How to install
 
