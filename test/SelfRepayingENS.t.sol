@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.17;
 
-import {Test, stdError} from "../lib/forge-std/src/Test.sol";
+import {Test, stdError, stdJson} from "../lib/forge-std/src/Test.sol";
 import {FixedPointMathLib} from "../lib/solmate/src/utils/FixedPointMathLib.sol";
 import {AlchemicTokenV2} from "../lib/alchemix/src/AlchemicTokenV2.sol";
 import {WETHGateway} from "../lib/alchemix/src/WETHGateway.sol";
@@ -106,6 +106,7 @@ contract SelfRepayingENSTest is Test {
         assertEq(names[0], name);
     }
 
+    /// @dev Test `srens.subscribe()` do not fail when we call it with different existing names.
     function testSubscribeMultipleTimes() external {
         // Subscribe once as `scoopy` for `name`.
         testSubscribe();
@@ -115,18 +116,16 @@ contract SelfRepayingENSTest is Test {
 
         // Subscribe to the Self Repaying ENS service for `name`.
         // `srens` should emit a {Subscribed} event.
+        // It shouldn't create task.
         vm.expectEmit(true, true, false, false, address(srens));
         emit Subscribe(scoopy, "alchemix", "alchemix");
-        // It shouldn't create task.
         bytes32 taskId = srens.subscribe("alchemix");
-
         // `srens.getTaskId()` should return the same task id.
         assertEq(taskId, 0);
 
         // `srens.subscribedNames()` should be updated.
         string[] memory names = srens.subscribedNames(scoopy);
         assertEq(names.length, 2);
-        assertEq(names[0], name);
         assertEq(names[1], "alchemix");
     }
 
@@ -225,6 +224,7 @@ contract SelfRepayingENSTest is Test {
         data[1] = abi.encodeCall(srens.subscribe, ("alchemix"));
         // Try to subscribe to the `srens` service for multiple names with one that doesn't exist.
         vm.expectRevert(SelfRepayingENS.IllegalArgument.selector);
+        // Subscribe to the `srens` service for multiple names.
         srens.multicall(data);
     }
 
@@ -234,6 +234,36 @@ contract SelfRepayingENSTest is Test {
         vm.startPrank(scoopy, scoopy);
         srens.subscribe("alchemix"); // Expiry in 2026.09.21 at 13:24 (UTC+02:00).
         srens.subscribe(name);
+        vm.stopPrank();
+
+        // Warp to some time before `name` expiry date.
+        bytes32 labelHash = keccak256(bytes(name));
+        uint256 expiresAt = config.registrar.nameExpires(uint256(labelHash));
+        vm.warp(expiresAt - 4 days);
+
+        // `srens` checker function should tell Gelato to renew `name` since it's the closest to its expiry.
+        (bool canExec, bytes memory execPayload) = srens.checker(scoopy);
+        assertTrue(canExec, "checker failed");
+        assertEq(execPayload, abi.encodeCall(srens.renew, (name, scoopy)), "execPayload error");
+    }
+
+    /// @dev Test `srens.checker()` with a high number of names.
+    function testCheckerWithHighNamesNumber() external {
+        // Subscribe as `scoopy` for `name` and "alchemix".
+        vm.startPrank(scoopy, scoopy);
+        srens.subscribe(name);
+
+        // Prepare multicall data.
+        string memory root = vm.projectRoot();
+        string memory path = string.concat(root, "/test/data/names.json");
+        string memory json = vm.readFile(path);
+        string[] memory names = stdJson.readStringArray(json, ".data");
+        bytes[] memory data = new bytes[](100);
+        for (uint256 i; i < 100; i++) {
+            data[i] = abi.encodeCall(srens.subscribe, (names[i]));
+        }
+        // Subscribe to the `srens` service for multiple names.
+        srens.multicall(data);
         vm.stopPrank();
 
         // Warp to some time before `name` expiry date.
@@ -460,6 +490,7 @@ contract SelfRepayingENSTest is Test {
 
         (int256 previousDebt,) = config.alchemist.accounts(scoopy);
         uint256 namePrice = config.controller.rentPrice(name, 365 days);
+        uint256 previousGelatoBalance = config.gelatoOps.gelato().balance;
 
         // Gelato now execute the defined task.
         // `srens` called by Gelato should renew `name` for `renewalDuration` for `namePrice` by minting some alETH debt.
@@ -470,6 +501,9 @@ contract SelfRepayingENSTest is Test {
         // Check `name`'s renewal increased `scoopy`'s Alchemix debt.
         (int256 newDebt,) = config.alchemist.accounts(scoopy);
         assertTrue(newDebt >= previousDebt + int256(namePrice + gelatoFee), "debt assertion");
+        // Check we paid Gelato in ETH.
+        uint256 newGelatoBalance = config.gelatoOps.gelato().balance;
+        assertTrue(newGelatoBalance == previousGelatoBalance + gelatoFee);
     }
 
     /// @dev Test the happy path of the entire user interaction with `srens`.

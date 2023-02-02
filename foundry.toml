@@ -7,5 +7,6 @@ gas_reports = ["SelfRepayingENS", "AlETHRouter"]
 
 fs_permissions = [
     { access = "read", path = "./deployments/external.json" },
-    { access = "read", path = "./broadcast/" }
+    { access = "read", path = "./broadcast/" },
+    { access = "read", path = "./test/data/" }
 ]
