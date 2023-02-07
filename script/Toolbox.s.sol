@@ -2,16 +2,17 @@
 pragma solidity ^0.8.17;
 
 import {Script, stdJson} from "../lib/forge-std/src/Script.sol";
-import {WETHGateway} from "../lib/alchemix/src/WETHGateway.sol";
+
 import {Whitelist} from "../lib/alchemix/src/utils/Whitelist.sol";
-import {AlETHRouter, IAlchemistV2, ICurvePool, ICurveCalc} from "../lib/aleth-router/src/AlETHRouter.sol";
+import {WETHGateway} from "../lib/alchemix/src/WETHGateway.sol";
+import {AlETHRouter, IAlchemistV2, ICurveCalc, ICurvePool} from "../lib/aleth-router/src/AlETHRouter.sol";
 
 import {
-    SelfRepayingENS,
     AlETHRouter,
-    ETHRegistrarController,
     BaseRegistrarImplementation,
-    Ops
+    ETHRegistrarController,
+    Ops,
+    SelfRepayingENS
 } from "../src/SelfRepayingENS.sol";
 
 contract Toolbox is Script {
@@ -69,7 +70,7 @@ contract Toolbox is Script {
         string memory path = string.concat(root, "/deployments/external.json");
         string memory json = vm.readFile(path);
         // Will panic if the network config is missing.
-        bytes memory raw = json.parseRaw(string.concat("chainId.", vm.toString(block.chainid)));
+        bytes memory raw = json.parseRaw(string.concat(".chainId.", vm.toString(block.chainid)));
         Config memory config = abi.decode(raw, (Config));
         // Cache value.
         _config = config;

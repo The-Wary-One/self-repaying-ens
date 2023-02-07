@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.17;
 
-import "../../src/SelfRepayingENS.sol";
+import {LibDataTypes, Ops, SelfRepayingENS} from "../../src/SelfRepayingENS.sol";
 
 /// @dev A contract that tries to renew its names using a `SelfRepyaingENS` user's funds.
 contract Freeloader {

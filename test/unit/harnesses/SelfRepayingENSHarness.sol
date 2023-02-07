@@ -1,10 +1,16 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.17;
 
-import "src/SelfRepayingENS.sol";
+import {
+    AlETHRouter,
+    BaseRegistrarImplementation,
+    ETHRegistrarController,
+    Ops,
+    SelfRepayingENS
+} from "../../../src/SelfRepayingENS.sol";
 
 /// @dev This indirection allows us to expose internal functions.
-contract SelfRepayingENSStub is SelfRepayingENS {
+contract SelfRepayingENSHarness is SelfRepayingENS {
     constructor(
         AlETHRouter _router,
         ETHRegistrarController _controller,
@@ -14,7 +20,7 @@ contract SelfRepayingENSStub is SelfRepayingENS {
 
     /* --- EXPOSED INTERNAL FUNCTIONS --- */
 
-    function publicGetVariableMaxGasPrice(int256 expiredDuration) external pure returns (uint256) {
+    function exposed_getVariableMaxGasPrice(int256 expiredDuration) external pure returns (uint256) {
         return _getVariableMaxGasPrice(expiredDuration);
     }
 }

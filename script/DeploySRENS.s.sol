@@ -3,14 +3,15 @@ pragma solidity ^0.8.17;
 
 import {Script} from "../lib/forge-std/src/Script.sol";
 
-import {
-    SelfRepayingENS,
-    AlETHRouter,
-    ETHRegistrarController,
-    BaseRegistrarImplementation,
-    Ops
-} from "../src/SelfRepayingENS.sol";
 import {Toolbox} from "./Toolbox.s.sol";
+
+import {
+    AlETHRouter,
+    BaseRegistrarImplementation,
+    ETHRegistrarController,
+    Ops,
+    SelfRepayingENS
+} from "../src/SelfRepayingENS.sol";
 
 contract DeploySRENS is Script {
     /// @dev Deploy the contract on the target chain.

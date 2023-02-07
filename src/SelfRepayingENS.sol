@@ -1,17 +1,24 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.17;
 
-import {toDaysWadUnsafe, wadExp, wadDiv} from "../lib/solmate/src/utils/SignedWadMath.sol";
+/* --- External dependencies --- */
+/* --- AlETHRouter --- */
 import {AlETHRouter} from "../lib/aleth-router/src/AlETHRouter.sol";
+/* --- ENS --- */
 import {
-    ETHRegistrarController,
-    BaseRegistrarImplementation
+    BaseRegistrarImplementation,
+    ETHRegistrarController
 } from "../lib/ens-contracts/contracts/ethregistrar/ETHRegistrarController.sol";
-import {Ops, LibDataTypes} from "../lib/ops/contracts/Ops.sol";
+/* --- Openzeppelin --- */
+import {Multicall} from "../lib/openzeppelin/contracts/utils/Multicall.sol";
+/* --- Gelato --- */
+import {LibDataTypes, Ops} from "../lib/ops/contracts/Ops.sol";
 import {ProxyModule} from "../lib/ops/contracts/taskModules/ProxyModule.sol";
 import {IOpsProxyFactory} from "../lib/ops/contracts/interfaces/IOpsProxyFactory.sol";
-import {Multicall} from "../lib/openzeppelin/contracts/utils/Multicall.sol";
+/* --- Solmate --- */
+import {toDaysWadUnsafe, wadDiv, wadExp} from "../lib/solmate/src/utils/SignedWadMath.sol";
 
+/* --- Internal dependencies --- */
 import {EnumerableSet} from "./libraries/EnumerableSet.sol";
 
 /// @title SelfRepayingENS
@@ -245,7 +252,9 @@ contract SelfRepayingENS is Multicall {
         moduleData.args[0] = abi.encode(address(this), abi.encodeCall(this.checker, (subscriber)));
     }
 
-    /// @dev Get the variable maximum gas price for this expired name.
+    /// @dev Get the variable maximum gas price for this name.
+    ///
+    /// @notice **_NOTE:_** Returns type(uint256).max when called with a name that doesn't exist or that is expired.
     ///
     /// @param name The ENS name to renew.
     /// @return The maximum gas price in wei allowed to renew `name`.
@@ -273,7 +282,7 @@ contract SelfRepayingENS is Multicall {
                 return type(uint256).max;
             }
             // Between 90 and 0 days before expiry.
-            // x = (expiredDuration + 90) / 1 days; in wad.
+            // x = (expiredDuration + 90 days) / 1 days; in wad.
             uint256 x = uint256(toDaysWadUnsafe(uint256(expiredDuration + int256(90 days)))); // Safe here.
             // exp = x / 2.62 - 30; can be negative, in wad.
             int256 exponant = wadDiv(int256(x), 2.62e18) - 30e18;

@@ -1,12 +1,13 @@
 [profile.default]
-src = 'src'
-out = 'out'
-libs = ['lib']
-
+optimizer = false                  # Enable or disable the solc optimizer
+verbosity = 3                      # The verbosity of tests
 gas_reports = ["SelfRepayingENS", "AlETHRouter"]
-
 fs_permissions = [
     { access = "read", path = "./deployments/external.json" },
     { access = "read", path = "./broadcast/" },
-    { access = "read", path = "./test/data/" }
+    { access = "read", path = "./test/integration/data/" }
 ]
+rpc_endpoints = { mainnet = "${RPC_MAINNET}" }
+
+[profile.production]
+via_ir = true
