@@ -4,7 +4,7 @@ pragma solidity ^0.8.17;
 import {TestBase} from "../TestBase.sol";
 
 contract RenewalScenarioTests is TestBase {
-    /// @dev Test the happy path of the entire Alchemix + AlETHRouter + SelfRepayingENS + ENS + Gelato interaction.
+    /// @dev Test the happy path of the entire Alchemix + SelfRepayingENS + ENS + Gelato interaction.
     ///
     /// @dev **_NOTE:_** It is pretty difficult to perfectly test complex protocols locally when they rely on bots as they usually don't give integrators test mocks.
     /// @dev **_NOTE:_** In the following tests we won't care about Alchemix/Yearn bots and we manually simulate Gelato's.
@@ -12,10 +12,8 @@ contract RenewalScenarioTests is TestBase {
         // Act as scoopy, an EOA.
         vm.startPrank(scoopy, scoopy);
 
-        // Scoopy, the subscriber, needs to allow `router` to mint enough alETH debt token to pay for the renewal.
-        config.alchemist.approveMint(address(config.router), type(uint256).max);
-        // Scoopy, the subscriber, needs to allow `srens` to use the `router`.
-        config.router.approve(address(srens), type(uint256).max);
+        // Scoopy, the subscriber, needs to allow `srens` to mint enough alETH debt token to pay for the renewal.
+        config.alchemist.approveMint(address(srens), type(uint256).max);
 
         // Subscribe to the Self Repaying ENS service for `name`.
         // `srens` should emit a {Subscribed} event.
@@ -63,10 +61,8 @@ contract RenewalScenarioTests is TestBase {
     function testFork_renewalScenario_whenNameIsInItsGracePeriod() external {
         // Act as scoopy, an EOA.
         vm.startPrank(scoopy, scoopy);
-        // Scoopy, the subscriber, needs to allow `router` to mint enough alETH debt token to pay for the renewal.
-        config.alchemist.approveMint(address(config.router), type(uint256).max);
-        // Scoopy, the subscriber, needs to allow `srens` to use the `router`.
-        config.router.approve(address(srens), type(uint256).max);
+        // Scoopy, the subscriber, needs to allow `srens` to mint enough alETH debt token to pay for the renewal.
+        config.alchemist.approveMint(address(srens), type(uint256).max);
         // Subscribe to the Self Repaying ENS service for `name`.
         srens.subscribe(name);
 

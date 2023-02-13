@@ -4,6 +4,7 @@ pragma solidity ^0.8.17;
 import {Test} from "../lib/forge-std/src/Test.sol";
 
 import {WETHGateway} from "../lib/alchemix/src/WETHGateway.sol";
+import {Whitelist} from "../lib/alchemix/src/utils/Whitelist.sol";
 
 import {Toolbox, ToolboxLocal} from "../script/ToolboxLocal.s.sol";
 
@@ -34,14 +35,17 @@ contract TestBase is Test {
         require(block.chainid == 1, "Tests should be run on a mainnet fork");
 
         toolbox = new ToolboxLocal();
-        // Deploy the AlETHRouter contract first.
-        toolbox.deployTestRouter();
         // Deploy the SelfRepayingENS contract.
         srens = toolbox.deployTestSRENS();
         // Get the mainnet config.
         config = toolbox.getConfig();
 
         // The contract is ready to be used.
+        // Add it to the alchemist whitelist.
+        Whitelist whitelist = Whitelist(config.alchemist.whitelist());
+        vm.prank(whitelist.owner());
+        whitelist.add(address(srens));
+        require(whitelist.isWhitelisted(address(srens)));
         (bool isReady,) = toolbox.check(srens);
         require(isReady);
 

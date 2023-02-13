@@ -14,10 +14,10 @@
 [submodule "lib/alchemix"]
 	path = lib/alchemix
 	url = https://github.com/alchemix-finance/v2-foundry
-[submodule "lib/aleth-router"]
-	path = lib/aleth-router
-	url = https://github.com/The-Wary-One/aleth-router
 [submodule "lib/openzeppelin"]
 	path = lib/openzeppelin
 	url = https://github.com/OpenZeppelin/openzeppelin-contracts
 	branch = v4.8.0
+[submodule "lib/self-repaying-eth"]
+	path = lib/self-repaying-eth
+	url = https://github.com/The-Wary-One/self-repaying-eth

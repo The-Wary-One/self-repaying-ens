@@ -1,7 +1,7 @@
 [profile.default]
 optimizer = false                  # Enable or disable the solc optimizer
 verbosity = 3                      # The verbosity of tests
-gas_reports = ["SelfRepayingENS", "AlETHRouter"]
+gas_reports = ["SelfRepayingENS"]
 fs_permissions = [
     { access = "read", path = "./deployments/external.json" },
     { access = "read", path = "./broadcast/" },

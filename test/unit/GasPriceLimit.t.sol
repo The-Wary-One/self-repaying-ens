@@ -12,10 +12,12 @@ contract GetVariableMaxGasPriceTests is TestBase {
         super.setUp();
 
         srensHarness = new SelfRepayingENSHarness(
-            config.router,
             config.controller,
             config.registrar,
-            config.gelatoOps
+            config.gelatoOps,
+            config.alchemist,
+            config.alETHPool,
+            config.curveCalc
         );
     }
 

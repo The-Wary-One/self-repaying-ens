@@ -2,8 +2,6 @@
 pragma solidity ^0.8.17;
 
 /* --- External dependencies --- */
-/* --- AlETHRouter --- */
-import {AlETHRouter} from "../lib/aleth-router/src/AlETHRouter.sol";
 /* --- ENS --- */
 import {
     BaseRegistrarImplementation,
@@ -15,6 +13,8 @@ import {Multicall} from "../lib/openzeppelin/contracts/utils/Multicall.sol";
 import {LibDataTypes, Ops} from "../lib/ops/contracts/Ops.sol";
 import {ProxyModule} from "../lib/ops/contracts/taskModules/ProxyModule.sol";
 import {IOpsProxyFactory} from "../lib/ops/contracts/interfaces/IOpsProxyFactory.sol";
+/* --- Self Repaying ENS --- */
+import {IAlchemistV2, ICurveCalc, ICurvePool, SelfRepayingETH} from "../lib/self-repaying-eth/src/SelfRepayingETH.sol";
 /* --- Solmate --- */
 import {toDaysWadUnsafe, wadDiv, wadExp} from "../lib/solmate/src/utils/SignedWadMath.sol";
 
@@ -23,14 +23,11 @@ import {EnumerableSet} from "./libraries/EnumerableSet.sol";
 
 /// @title SelfRepayingENS
 /// @author Wary
-contract SelfRepayingENS is Multicall {
+contract SelfRepayingENS is SelfRepayingETH, Multicall {
     using EnumerableSet for EnumerableSet.StringSet;
 
     /// @notice The ENS name renewal duration in seconds.
     uint256 constant renewalDuration = 365 days;
-
-    /// @notice The Alchemix alETH router contract.
-    AlETHRouter immutable router;
 
     /// @notice The ENS ETHRegistrarController (i.e. .eth controller) contract.
     ETHRegistrarController immutable controller;
@@ -77,12 +74,13 @@ contract SelfRepayingENS is Multicall {
     ///
     /// @dev We annotate it payable to make it cheaper. Do not send ETH.
     constructor(
-        AlETHRouter _router,
         ETHRegistrarController _controller,
         BaseRegistrarImplementation _registrar,
-        Ops _gelatoOps
-    ) payable {
-        router = _router;
+        Ops _gelatoOps,
+        IAlchemistV2 _alchemist,
+        ICurvePool _alETHPool,
+        ICurveCalc _curveCalc
+    ) payable SelfRepayingETH(_alchemist, _alETHPool, _curveCalc) {
         controller = _controller;
         registrar = _registrar;
         gelatoOps = _gelatoOps;
@@ -97,7 +95,7 @@ contract SelfRepayingENS is Multicall {
     /// @notice `name` must exist and not be in `subscriber`'s to be renewed list or this call will revert an {IllegalArgument} error.
     /// @notice Emits a {Subscribed} event.
     ///
-    /// @notice **_NOTE:_** The `SelfRepayingENS` contract must have enough `AlETHRouter.allowance()` to renew `name`. The can be done via the `AlETHRouter.approve()` method.
+    /// @notice **_NOTE:_** The `SelfRepayingENS` contract must have enough `AlchemistV2.mintAllowance()` to renew `name`. The can be done via the `AlchemistV2.approveMint()` method.
     /// @notice **_NOTE:_** The `msg.sender` must make sure they have enough `AlchemistV2.totalValue()` to cover `name` renewal fee.
     ///
     /// @param name The ENS name to monitor and renew.
@@ -187,7 +185,7 @@ contract SelfRepayingENS is Multicall {
 
     /// @notice Renew `name` by minting new debt from `subscriber`'s Alchemix account.
     ///
-    /// @notice **_NOTE:_** When renewing, the `AlETHRouter` and the `SelfRepayingENS` contracts must have **allowance()** to mint new alETH debt tokens on behalf of **subscriber** to cover **name** renewal and the Gelato fee costs. This can be done via the `AlchemistV2.approveMint()` and `AlETHRouter.approve()` methods.
+    /// @notice **_NOTE:_** When renewing, the `SelfRepayingENS` contract must have **mintAllowance()** to mint new alETH debt tokens on behalf of **subscriber** to cover **name** renewal and the Gelato fee costs. This can be done via the `AlchemistV2.approveMint()` method.
     ///
     /// @dev It is called by the `GelatoOps` contract.
     /// @dev We annotate it payable to make it cheaper. Do not send ETH.
@@ -209,7 +207,7 @@ contract SelfRepayingENS is Multicall {
             uint256 neededETH = namePrice + gelatoFee;
 
             // Borrow `neededETH` amount of ETH from `subscriber` Alchemix account.
-            router.borrowAndSendETHFrom(subscriber, address(this), neededETH);
+            _borrowSelfRepayingETHFrom(subscriber, neededETH);
 
             // Renew `name` for its expiry data + `renewalDuration` first.
             controller.renew{value: namePrice}(name, renewalDuration);
@@ -296,8 +294,6 @@ contract SelfRepayingENS is Multicall {
     }
 
     /// @notice To receive ETH payments.
-    ///
-    /// @dev To receive ETH from AlETHRouter.borrowAndSendETH().
-    /// @dev All other received ETH will be sent to the next Gelato executor.
-    receive() external payable {}
+    /// @dev See {SelfRepayingETH.receive}.
+    receive() external payable override {}
 }

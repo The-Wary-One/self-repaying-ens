@@ -6,9 +6,11 @@ import {Script} from "../lib/forge-std/src/Script.sol";
 import {Toolbox} from "./Toolbox.s.sol";
 
 import {
-    AlETHRouter,
     BaseRegistrarImplementation,
     ETHRegistrarController,
+    IAlchemistV2,
+    ICurveCalc,
+    ICurvePool,
     Ops,
     SelfRepayingENS
 } from "../src/SelfRepayingENS.sol";
@@ -21,23 +23,29 @@ contract DeploySRENS is Script {
         Toolbox.Config memory config = toolbox.getConfig();
 
         // Deploy the contract.
-        return deploy(config.router, config.controller, config.registrar, config.gelatoOps);
+        return deploy(
+            config.controller, config.registrar, config.gelatoOps, config.alchemist, config.alETHPool, config.curveCalc
+        );
     }
 
     /// @dev Deploy the contract.
     function deploy(
-        AlETHRouter router,
         ETHRegistrarController controller,
         BaseRegistrarImplementation registrar,
-        Ops gelatoOps
+        Ops gelatoOps,
+        IAlchemistV2 alchemist,
+        ICurvePool alETHPool,
+        ICurveCalc curveCalc
     ) public returns (SelfRepayingENS) {
         // Deploy the SRENS contract.
         vmSafe.broadcast();
         SelfRepayingENS srens = new SelfRepayingENS(
-            router,
             controller,
             registrar,
-            gelatoOps
+            gelatoOps,
+            alchemist,
+            alETHPool,
+            curveCalc
         );
 
         return srens;

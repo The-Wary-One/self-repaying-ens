@@ -12,10 +12,8 @@ contract AttackScenarioTests is TestBase {
     function testFork_freeloaderAttack() external {
         // Act as scoopy, an EOA.
         vm.startPrank(scoopy, scoopy);
-        // Scoopy, the subscriber, needs to allow `router` to mint enough alETH debt token to pay for the renewal.
-        config.alchemist.approveMint(address(config.router), type(uint256).max);
-        // Scoopy, the subscriber, needs to allow `srens` to use the `router`.
-        config.router.approve(address(srens), type(uint256).max);
+        // Scoopy, the subscriber, needs to allow `srens` to mint enough alETH debt token to pay for the renewal.
+        config.alchemist.approveMint(address(srens), type(uint256).max);
         // Subscribe to the Self Repaying ENS service for `name`.
         srens.subscribe(name);
         vm.stopPrank();

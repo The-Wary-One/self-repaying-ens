@@ -5,15 +5,9 @@ import {Script, stdJson} from "../lib/forge-std/src/Script.sol";
 
 import {Whitelist} from "../lib/alchemix/src/utils/Whitelist.sol";
 import {WETHGateway} from "../lib/alchemix/src/WETHGateway.sol";
-import {AlETHRouter, IAlchemistV2, ICurveCalc, ICurvePool} from "../lib/aleth-router/src/AlETHRouter.sol";
+import {IAlchemistV2, ICurveCalc, ICurvePool} from "../lib/self-repaying-eth/src/SelfRepayingETH.sol";
 
-import {
-    AlETHRouter,
-    BaseRegistrarImplementation,
-    ETHRegistrarController,
-    Ops,
-    SelfRepayingENS
-} from "../src/SelfRepayingENS.sol";
+import {BaseRegistrarImplementation, ETHRegistrarController, Ops, SelfRepayingENS} from "../src/SelfRepayingENS.sol";
 
 contract Toolbox is Script {
     using stdJson for string;
@@ -24,7 +18,6 @@ contract Toolbox is Script {
         WETHGateway wethGateway;
         ICurvePool alETHPool;
         ICurveCalc curveCalc;
-        AlETHRouter router;
         ETHRegistrarController controller;
         BaseRegistrarImplementation registrar;
         Ops gelatoOps;
@@ -49,7 +42,7 @@ contract Toolbox is Script {
         // Get the value at `contractAddress` of a `CREATE` transaction.
         address addr = json.readAddress(
             // FIXME: This should be correct "$.transactions.[?(@.transactionType == 'CREATE' && @.contractName == 'SelfRepayingENS')].contractAddress"
-            "transactions[?(@.transactionType == 'CREATE')].contractAddress"
+            ".transactions[?(@.transactionType == 'CREATE')].contractAddress"
         );
         SelfRepayingENS srens = SelfRepayingENS(payable(addr));
 
@@ -93,10 +86,10 @@ contract Toolbox is Script {
 
         // Get the chain config.
         Config memory config = getConfig();
-        // Check if `router` is whitelisted by Alchemix's AlchemistV2 alETH contract.
+        // Check if `srens` is whitelisted by Alchemix's AlchemistV2 alETH contract.
         Whitelist whitelist = Whitelist(config.alchemist.whitelist());
-        if (!whitelist.isWhitelisted(address(config.router))) {
-            return (false, "Alchemix must whitelist the router contract");
+        if (!whitelist.isWhitelisted(address(srens))) {
+            return (false, "Alchemix must whitelist the srens contract");
         }
 
         // All checks passed.
@@ -131,17 +124,16 @@ contract Toolbox is Script {
         srens.unsubscribe(name);
     }
 
-    /// @dev Approve the last deployed router contract to mint alETH debt and the last deployed srens contract to use the router.
+    /// @dev Approve the last deployed srens contract to mint alETH debt.
     function approve() external {
         // Get the config.
         Config memory config = getConfig();
         // Get the last deployment address on this chain.
         SelfRepayingENS srens = getLastSRENSDeployment();
 
-        // Approve router to mint debt.
+        // Approve srens to mint debt.
         vm.startBroadcast();
-        config.alchemist.approveMint(address(config.router), type(uint256).max);
-        config.router.approve(address(srens), type(uint256).max);
+        config.alchemist.approveMint(address(srens), type(uint256).max);
     }
 
     /// @dev Create an Alchemix account.

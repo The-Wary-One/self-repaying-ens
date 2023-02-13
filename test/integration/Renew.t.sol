@@ -21,10 +21,8 @@ contract RenewTests is TestBase {
         super.setUp();
 
         vm.startPrank(scoopy, scoopy);
-        // Scoopy, the subscriber, needs to allow `router` to mint enough alETH debt token to pay for the renewal.
-        config.alchemist.approveMint(address(config.router), type(uint256).max);
-        // Scoopy, the subscriber, needs to allow `srens` to use the `router`.
-        config.router.approve(address(srens), type(uint256).max);
+        // Scoopy, the subscriber, needs to allow `srens` to mint enough alETH debt token to pay for the renewal.
+        config.alchemist.approveMint(address(srens), type(uint256).max);
         // Subscribe as `scoopy` for `name`.
         srens.subscribe(name);
 
@@ -105,10 +103,8 @@ contract RenewFailureTests is TestBase {
         // Act as Scoopy, an EOA.
         vm.prank(scoopy, scoopy);
 
-        // Allow `router` to mint debt but not enough to renew `name`.
-        config.alchemist.approveMint(address(config.router), 1);
-        // Scoopy, the subscriber, needs to allow `srens` to use the `router`.
-        config.router.approve(address(srens), 1);
+        // Allow `srens` to mint debt but not enough to renew `name`.
+        config.alchemist.approveMint(address(srens), 1);
 
         // Act as a the GelatoOps.
         vm.prank(address(config.gelatoOps));
@@ -134,10 +130,8 @@ contract RenewFailureTests is TestBase {
         // Mint all of `scoopy`'s possible debt.
         config.alchemist.mint(totalValue.divWadDown(config.alchemist.minimumCollateralization()), scoopy);
 
-        // Scoopy, the subscriber, needs to allow `router` to mint enough alETH debt token to pay for the renewal.
-        config.alchemist.approveMint(address(config.router), type(uint256).max);
-        // Scoopy, the subscriber, needs to allow `srens` to use the `router`.
-        config.router.approve(address(srens), type(uint256).max);
+        // Scoopy, the subscriber, needs to allow `srens` to mint enough alETH debt token to pay for the renewal.
+        config.alchemist.approveMint(address(srens), type(uint256).max);
 
         vm.stopPrank();
 
