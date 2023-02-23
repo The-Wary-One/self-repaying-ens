@@ -194,8 +194,9 @@ contract SelfRepayingENS is SelfRepayingETH, Multicall {
     /// @param subscriber The address of the subscriber.
     function renew(string calldata name, address subscriber) external payable {
         unchecked {
-            // Checks `name` is one of `subscriber`'s names to renew. We do not trust the Gelato Executors.
-            if (!(_subscribedNames[subscriber].contains(name) && tx.gasprice <= getVariableMaxGasPrice(name))) {
+            // We do not trust the Gelato Executors to execute the task with the correct payload. We check it ourselves.
+            // Checks `name` is one of `subscriber`'s names to renew and `tx.gasprice` is lower or equal to `name`'s gas price limit.
+            if (!_subscribedNames[subscriber].contains(name) || tx.gasprice > getVariableMaxGasPrice(name)) {
                 revert IllegalArgument();
             }
 
