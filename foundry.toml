@@ -10,4 +10,5 @@ fs_permissions = [
 rpc_endpoints = { mainnet = "${RPC_MAINNET}" }
 
 [profile.production]
-via_ir = true
+optimizer = true
+optimizer_runs = 1_000_000
