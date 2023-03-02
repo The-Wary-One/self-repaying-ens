@@ -4,7 +4,6 @@ pragma solidity ^0.8.17;
 import {TestBase} from "../TestBase.sol";
 
 contract BugScenarioTests is TestBase {
-
     /// @dev Test the bug in v1.0.0 where `srens` tries to create a gelato tasks every time `subscriber`'s names to renew array is empty.
     function testFork_subscribe_whenNamesToRenewArrayIsEmpty() external {
         // Act as scoopy, an EOA.
