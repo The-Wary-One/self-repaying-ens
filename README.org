@@ -1,7 +1,7 @@
 #+title: Self Repaying ENS
 #+author: Wary
 
-An Alchemix user can subscribe to the Self Repaying ENS service to automatically renew an expired ENS name. The renewal fee is paid by adding some self repaying debt to the user Alchemix account 🧙🪄💸. It was made for [[https://gitcoin.co/hackathon/moneylegos][Gitcoin's Money Legos Hackaton]].
+An Alchemix user can subscribe to the Self Repaying ENS service to automatically renew an expired ENS name. The renewal fee is paid by adding some self repaying debt to the user Alchemix account 🧙🪄💸. Winner project of [[https://gitcoin.co/hackathon/moneylegos][Gitcoin's Money Legos Hackaton 2022]].
 
 
 * 🌍 Overview

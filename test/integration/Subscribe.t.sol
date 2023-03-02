@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.17;
 
-import {TestBase} from "../TestBase.sol";
+import {LibDataTypes, TestBase} from "../TestBase.sol";
 
 import {SelfRepayingENS} from "../../src/SelfRepayingENS.sol";
 
@@ -13,16 +13,13 @@ contract SubscribeTests is TestBase {
         vm.prank(scoopy, scoopy);
         vm.expectEmit(true, true, false, false, address(srens));
         emit Subscribe(scoopy, name, name);
-        bytes32 taskId = srens.subscribe(name);
-        assertTrue(taskId > 0, "it should create a task");
-        assertEq(srens.getTaskId(scoopy), taskId, "srens.getTaskId() should return the same task id");
+        srens.subscribe(name);
 
         // Subscribe to the Self Repaying ENS service for `name`.
         vm.prank(scoopy, scoopy);
         vm.expectEmit(true, true, false, false, address(srens));
         emit Subscribe(scoopy, "alchemix", "alchemix");
-        taskId = srens.subscribe("alchemix");
-        assertEq(taskId, 0, "it shouldn't create a task");
+        srens.subscribe("alchemix");
 
         // `srens.subscribedNames()` should be updated.
         string[] memory names = srens.subscribedNames(scoopy);
@@ -55,6 +52,19 @@ contract SubscribeTests is TestBase {
         names = srens.subscribedNames(techno);
         assertEq(names.length, 1, "techno names should be updated");
         assertEq(names[0], name);
+    }
+
+    /// @dev Test `srens.getTaskId()`.
+    function testFork_getTaskId() external {
+        assertEq(srens.getTaskId(scoopy), 0, "there should not be a gelato task for scoopy");
+        // Subscribe to the Self Repaying ENS service for `name`.
+        vm.prank(scoopy, scoopy);
+        srens.subscribe(name);
+
+        LibDataTypes.ModuleData memory moduleData = toolbox.getModuleData(srens, scoopy);
+        bytes32 taskId =
+            config.gelatoOps.getTaskId(address(srens), address(srens), srens.renew.selector, moduleData, ETH);
+        assertEq(srens.getTaskId(scoopy), taskId, "subscribing the first time should create a task");
     }
 }
 

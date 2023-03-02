@@ -44,6 +44,9 @@ contract SelfRepayingENS is SelfRepayingETH, Multicall {
     /// @notice The Gelato address for ETH.
     address constant ETH = 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE;
 
+    /// @notice The Gelato taskIds per subscriber.
+    mapping(address => bytes32) internal _taskIds;
+
     /// @notice The Set of names to renew per subscriber.
     mapping(address => EnumerableSet.StringSet) internal _subscribedNames;
 
@@ -99,9 +102,7 @@ contract SelfRepayingENS is SelfRepayingETH, Multicall {
     /// @notice **_NOTE:_** The `msg.sender` must make sure they have enough `AlchemistV2.totalValue()` to cover `name` renewal fee.
     ///
     /// @param name The ENS name to monitor and renew.
-    /// @return taskId The Gelato task id.
-    /// @dev We return the generated task id ONCE to simplify the `this.getTaskId()` Solidity test.
-    function subscribe(string memory name) external returns (bytes32 taskId) {
+    function subscribe(string memory name) external {
         EnumerableSet.StringSet storage subNames = _subscribedNames[msg.sender];
         // Check `name` exists and is within its grace period if expired.
         // The ENS grace period is 90 days.
@@ -114,9 +115,10 @@ contract SelfRepayingENS is SelfRepayingETH, Multicall {
         }
 
         // Create ONCE a gelato task to monitor `subscriber`'s names expiry and renew them.
-        // We choose to pay Gelato when executing the task.
-        if (subNames.length() == 0) {
-            taskId =
+        // If `msg.sender` doesn't have a taskId it means it's their first time subscribing.
+        if (_taskIds[msg.sender] == 0) {
+            // We choose to pay Gelato when executing the task.
+            _taskIds[msg.sender] =
                 gelatoOps.createTask(address(this), abi.encode(this.renew.selector), _getModuleData(msg.sender), ETH);
         }
 
@@ -233,13 +235,12 @@ contract SelfRepayingENS is SelfRepayingETH, Multicall {
     ///
     /// @dev This is a helper function to get a Gelato task id.
     ///
-    /// @notice **_NOTE:_** This function returns a "random" value if the task does not exists. Make sure you call it with a subscribed `subscriber`.
+    /// @notice **_NOTE:_** This function returns 0 if the task does not exists. Make sure you call it with a subscribed `subscriber`.
     ///
     /// @param subscriber The address of the subscriber.
     /// @return taskId The Gelato task id.
     function getTaskId(address subscriber) public view returns (bytes32 taskId) {
-        LibDataTypes.ModuleData memory moduleData = _getModuleData(subscriber);
-        return gelatoOps.getTaskId(address(this), address(this), this.renew.selector, moduleData, ETH);
+        return _taskIds[subscriber];
     }
 
     /// @dev Helper function to get the Gelato module data.
