@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: UNLICENSED
-pragma solidity ^0.8.17;
+pragma solidity ^0.8.26;
 
 import {Test} from "../lib/forge-std/src/Test.sol";
 
@@ -84,15 +84,15 @@ contract TestBase is Test {
         vm.stopPrank();
     }
 
-    /// @dev Simulate a Gelato Ops call with fees.
+    /// @dev Simulate a Gelato IAutomate call with fees.
     function execRenewTask(uint256 fee, string memory _name, address subscriber) internal {
         LibDataTypes.ModuleData memory moduleData = toolbox.getModuleData(srens, subscriber);
 
         // Act as the Gelato main contract.
-        vm.prank(config.gelato);
+        vm.prank(config.gelatoAutomate.gelato());
 
         // Execute the renew Gelato Task for `fee`.
-        config.gelatoOps.exec(
+        config.gelatoAutomate.exec(
             address(srens),
             address(srens),
             abi.encodeCall(srens.renew, (_name, subscriber)),

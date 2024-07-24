@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: UNLICENSED
-pragma solidity ^0.8.17;
+pragma solidity ^0.8.26;
 
 /* --- External dependencies --- */
 /* --- ENS --- */
@@ -10,9 +10,7 @@ import {
 /* --- Openzeppelin --- */
 import {Multicall} from "../lib/openzeppelin/contracts/utils/Multicall.sol";
 /* --- Gelato --- */
-import {LibDataTypes, Ops} from "../lib/ops/contracts/Ops.sol";
-import {ProxyModule} from "../lib/ops/contracts/taskModules/ProxyModule.sol";
-import {IOpsProxyFactory} from "../lib/ops/contracts/interfaces/IOpsProxyFactory.sol";
+import {Automate, LibDataTypes} from "../lib/gelato/contracts/Automate.sol";
 /* --- Self Repaying ENS --- */
 import {IAlchemistV2, ICurveCalc, ICurvePool, SelfRepayingETH} from "../lib/self-repaying-eth/src/SelfRepayingETH.sol";
 /* --- Solmate --- */
@@ -38,8 +36,8 @@ contract SelfRepayingENS is SelfRepayingETH, Multicall {
     /// @notice The Gelato contract.
     address payable immutable gelato;
 
-    /// @notice The Gelato Ops contract.
-    Ops immutable gelatoOps;
+    /// @notice The Gelato automate contract.
+    Automate immutable gelatoAutomate;
 
     /// @notice The Gelato address for ETH.
     address constant ETH = 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE;
@@ -79,16 +77,16 @@ contract SelfRepayingENS is SelfRepayingETH, Multicall {
     constructor(
         ETHRegistrarController _controller,
         BaseRegistrarImplementation _registrar,
-        Ops _gelatoOps,
+        Automate _gelatoAutomate,
         IAlchemistV2 _alchemist,
         ICurvePool _alETHPool,
         ICurveCalc _curveCalc
     ) payable SelfRepayingETH(_alchemist, _alETHPool, _curveCalc) {
         controller = _controller;
         registrar = _registrar;
-        gelatoOps = _gelatoOps;
+        gelatoAutomate = _gelatoAutomate;
 
-        gelato = _gelatoOps.gelato();
+        gelato = _gelatoAutomate.gelato();
     }
 
     /// @notice Subscribe to the self repaying ENS renewals service for `name`.
@@ -119,7 +117,7 @@ contract SelfRepayingENS is SelfRepayingETH, Multicall {
         if (_taskIds[msg.sender] == 0) {
             // We choose to pay Gelato when executing the task.
             _taskIds[msg.sender] =
-                gelatoOps.createTask(address(this), abi.encode(this.renew.selector), _getModuleData(msg.sender), ETH);
+                gelatoAutomate.createTask(address(this), abi.encode(this.renew.selector), _getModuleData(msg.sender), ETH);
         }
 
         // Add `name` to `subscriber`'s names to renew.
@@ -205,7 +203,7 @@ contract SelfRepayingENS is SelfRepayingETH, Multicall {
             // Get `name` rent price.
             uint256 namePrice = controller.rentPrice(name, renewalDuration);
             // Get the gelato fee in ETH.
-            (uint256 gelatoFee,) = gelatoOps.getFeeDetails();
+            (uint256 gelatoFee,) = gelatoAutomate.getFeeDetails();
             // The amount of ETH needed to pay the ENS renewal using Gelato.
             uint256 neededETH = namePrice + gelatoFee;
 
@@ -217,7 +215,7 @@ contract SelfRepayingENS is SelfRepayingETH, Multicall {
 
             // Pay the Gelato executor with all the ETH left. No ETH will be stuck in this contract.
             // Do not pay Gelato if `renew()` was called by someone else.
-            if (msg.sender != address(gelatoOps)) return;
+            if (msg.sender != address(gelatoAutomate)) return;
             (bool success,) = gelato.call{value: address(this).balance}("");
             if (!success) revert FailedTransfer();
         }
@@ -245,11 +243,13 @@ contract SelfRepayingENS is SelfRepayingETH, Multicall {
 
     /// @dev Helper function to get the Gelato module data.
     function _getModuleData(address subscriber) internal view returns (LibDataTypes.ModuleData memory moduleData) {
-        moduleData = LibDataTypes.ModuleData({modules: new LibDataTypes.Module[](1), args: new bytes[](1)});
+        moduleData = LibDataTypes.ModuleData({modules: new LibDataTypes.Module[](2), args: new bytes[](2)});
 
         moduleData.modules[0] = LibDataTypes.Module.RESOLVER;
+        moduleData.modules[1] = LibDataTypes.Module.PROXY;
 
         moduleData.args[0] = abi.encode(address(this), abi.encodeCall(this.checker, (subscriber)));
+        moduleData.args[1] = bytes("");
     }
 
     /// @dev Get the variable maximum gas price for this name.

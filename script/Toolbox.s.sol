@@ -1,13 +1,14 @@
 // SPDX-License-Identifier: UNLICENSED
-pragma solidity ^0.8.17;
+pragma solidity ^0.8.26;
 
 import {Script, stdJson} from "../lib/forge-std/src/Script.sol";
 
+import {Automate} from "../lib/gelato/contracts/Automate.sol";
 import {Whitelist} from "../lib/alchemix/src/utils/Whitelist.sol";
 import {WETHGateway} from "../lib/alchemix/src/WETHGateway.sol";
 import {IAlchemistV2, ICurveCalc, ICurvePool} from "../lib/self-repaying-eth/src/SelfRepayingETH.sol";
 
-import {BaseRegistrarImplementation, ETHRegistrarController, Ops, SelfRepayingENS} from "../src/SelfRepayingENS.sol";
+import {BaseRegistrarImplementation, ETHRegistrarController, SelfRepayingENS} from "../src/SelfRepayingENS.sol";
 
 contract Toolbox is Script {
     using stdJson for string;
@@ -20,8 +21,7 @@ contract Toolbox is Script {
         ICurveCalc curveCalc;
         ETHRegistrarController controller;
         BaseRegistrarImplementation registrar;
-        Ops gelatoOps;
-        address gelato;
+        Automate gelatoAutomate;
     }
 
     SelfRepayingENS private _srens;

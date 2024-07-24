@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: UNLICENSED
-pragma solidity ^0.8.17;
+pragma solidity ^0.8.26;
 
 import {TestBase} from "../TestBase.sol";
 import {SelfRepayingENSHarness} from "./harnesses/SelfRepayingENSHarness.sol";
@@ -14,7 +14,7 @@ contract GetVariableMaxGasPriceTests is TestBase {
         srensHarness = new SelfRepayingENSHarness(
             config.controller,
             config.registrar,
-            config.gelatoOps,
+            config.gelatoAutomate,
             config.alchemist,
             config.alETHPool,
             config.curveCalc

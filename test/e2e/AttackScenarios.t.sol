@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: UNLICENSED
-pragma solidity ^0.8.17;
+pragma solidity ^0.8.26;
 
 import {TestBase} from "../TestBase.sol";
 import {Freeloader} from "./Freeloader.sol";
@@ -43,7 +43,7 @@ contract AttackScenarioTests is TestBase {
         // Deploy the Freeloader contract to use `scoopy`'s account to renew `otherName`.
         Freeloader freeloader = new Freeloader(
             srens,
-            config.gelatoOps
+            config.gelatoAutomate
         );
 
         freeloader.subscribe(otherName, scoopy);
@@ -52,10 +52,10 @@ contract AttackScenarioTests is TestBase {
         // Gelato now execute the defined task.
         // `srens` called by Gelato should not renew `otherName` by minting some alETH debt using `scoopy` account.
         LibDataTypes.ModuleData memory moduleData = freeloader._getModuleData(scoopy, otherName);
-        vm.prank(config.gelato);
+        vm.prank(config.gelatoAutomate.gelato());
         // It should not be possible !
         vm.expectRevert("Ops.exec: NoErrorSelector");
-        config.gelatoOps.exec(
+        config.gelatoAutomate.exec(
             address(freeloader),
             address(srens),
             abi.encodeCall(srens.renew, (otherName, scoopy)),

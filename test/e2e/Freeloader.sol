@@ -1,21 +1,21 @@
 // SPDX-License-Identifier: UNLICENSED
-pragma solidity ^0.8.17;
+pragma solidity ^0.8.26;
 
-import {LibDataTypes, Ops, SelfRepayingENS} from "../../src/SelfRepayingENS.sol";
+import {Automate, LibDataTypes, SelfRepayingENS} from "../../src/SelfRepayingENS.sol";
 
 /// @dev A contract that tries to renew its names using a `SelfRepyaingENS` user's funds.
 contract Freeloader {
     SelfRepayingENS immutable srens;
-    Ops public immutable gelatoOps;
+    Automate public immutable gelatoAutomate;
     address constant ETH = 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE;
 
-    constructor(SelfRepayingENS _srens, Ops _gelatoOps) {
+    constructor(SelfRepayingENS _srens, Automate _gelatoAutomate) {
         srens = _srens;
-        gelatoOps = _gelatoOps;
+        gelatoAutomate = _gelatoAutomate;
     }
 
     function subscribe(string memory name, address subscriber) external returns (bytes32 taskId) {
-        taskId = gelatoOps.createTask(
+        taskId = gelatoAutomate.createTask(
             address(srens), abi.encode(srens.renew.selector), _getModuleData(subscriber, name), ETH
         );
     }
@@ -36,7 +36,9 @@ contract Freeloader {
         moduleData = LibDataTypes.ModuleData({modules: new LibDataTypes.Module[](1), args: new bytes[](1)});
 
         moduleData.modules[0] = LibDataTypes.Module.RESOLVER;
+        moduleData.modules[1] = LibDataTypes.Module.PROXY;
 
         moduleData.args[0] = abi.encode(address(this), abi.encodeCall(this.checker, (subscriber, name)));
+        moduleData.args[1] = bytes("");
     }
 }

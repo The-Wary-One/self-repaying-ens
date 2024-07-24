@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: UNLICENSED
-pragma solidity ^0.8.17;
+pragma solidity ^0.8.26;
 
 import {LibDataTypes, TestBase} from "../TestBase.sol";
 
@@ -63,7 +63,7 @@ contract SubscribeTests is TestBase {
 
         LibDataTypes.ModuleData memory moduleData = toolbox.getModuleData(srens, scoopy);
         bytes32 taskId =
-            config.gelatoOps.getTaskId(address(srens), address(srens), srens.renew.selector, moduleData, ETH);
+            config.gelatoAutomate.getTaskId(address(srens), address(srens), srens.renew.selector, moduleData, ETH);
         assertEq(srens.getTaskId(scoopy), taskId, "subscribing the first time should create a task");
     }
 }

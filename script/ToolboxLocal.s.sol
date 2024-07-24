@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: UNLICENSED
-pragma solidity ^0.8.17;
+pragma solidity ^0.8.26;
 
 import {Script} from "../lib/forge-std/src/Script.sol";
 
 import {DeploySRENS} from "./DeploySRENS.s.sol";
 import {Toolbox} from "./Toolbox.s.sol";
 
-import {LibDataTypes, Ops, SelfRepayingENS} from "../src/SelfRepayingENS.sol";
+import {LibDataTypes, SelfRepayingENS} from "../src/SelfRepayingENS.sol";
 
 contract ToolboxLocal is Toolbox {
     address constant ETH = 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE;
@@ -24,8 +24,10 @@ contract ToolboxLocal is Toolbox {
         moduleData = LibDataTypes.ModuleData({modules: new LibDataTypes.Module[](1), args: new bytes[](1)});
 
         moduleData.modules[0] = LibDataTypes.Module.RESOLVER;
+        moduleData.modules[1] = LibDataTypes.Module.PROXY;
 
         moduleData.args[0] = abi.encode(address(srens), abi.encodeCall(srens.checker, (subscriber)));
+        moduleData.args[1] = bytes("");
     }
 
     /// @dev Deploy the SRENS contract for tests.
@@ -36,7 +38,7 @@ contract ToolboxLocal is Toolbox {
         SelfRepayingENS srens = new SelfRepayingENS(
             config.controller,
             config.registrar,
-            config.gelatoOps,
+            config.gelatoAutomate,
             config.alchemist,
             config.alETHPool,
             config.curveCalc

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: UNLICENSED
-pragma solidity ^0.8.17;
+pragma solidity ^0.8.26;
 
 import {stdError} from "../../lib/forge-std/src/Test.sol";
 
@@ -31,7 +31,7 @@ contract RenewTests is TestBase {
 
         (previousDebt,) = config.alchemist.accounts(scoopy);
         namePrice = config.controller.rentPrice(name, 365 days);
-        previousGelatoBalance = config.gelatoOps.gelato().balance;
+        previousGelatoBalance = config.gelatoAutomate.gelato().balance;
         // Wait for `name` to be in its renew period.
         vm.warp(expiresAt - 10 days);
         vm.stopPrank();
@@ -61,7 +61,7 @@ contract RenewTests is TestBase {
         (int256 newDebt,) = config.alchemist.accounts(scoopy);
         assertTrue(newDebt >= previousDebt + int256(namePrice + gelatoFee), "name renewal should increase scoopy debt");
 
-        uint256 newGelatoBalance = config.gelatoOps.gelato().balance;
+        uint256 newGelatoBalance = config.gelatoAutomate.gelato().balance;
         assertTrue(newGelatoBalance == previousGelatoBalance + gelatoFee, "Gelato should have been paid");
     }
 }
@@ -80,7 +80,7 @@ contract RenewFailureTests is TestBase {
         srens.renew("badname", scoopy);
 
         // Act as GelatoOps.
-        vm.prank(address(config.gelatoOps));
+        vm.prank(address(config.gelatoAutomate));
 
         // Try to renew `name` when its not time to renew it.
         vm.expectRevert(SelfRepayingENS.IllegalArgument.selector);
@@ -94,7 +94,7 @@ contract RenewFailureTests is TestBase {
         srens.subscribe(name);
 
         // Act as a the GelatoOps.
-        vm.prank(address(config.gelatoOps));
+        vm.prank(address(config.gelatoAutomate));
 
         // Try to renew `name` without approving `srens` to mint debt.
         vm.expectRevert(stdError.arithmeticError);
@@ -107,7 +107,7 @@ contract RenewFailureTests is TestBase {
         config.alchemist.approveMint(address(srens), 1);
 
         // Act as a the GelatoOps.
-        vm.prank(address(config.gelatoOps));
+        vm.prank(address(config.gelatoAutomate));
 
         // Try to renew `name` without approving `srens` to mint debt.
         vm.expectRevert(stdError.arithmeticError);
@@ -136,7 +136,7 @@ contract RenewFailureTests is TestBase {
         vm.stopPrank();
 
         // Act as a the GelatoOps.
-        vm.prank(address(config.gelatoOps));
+        vm.prank(address(config.gelatoAutomate));
 
         // Try to renew `name` without enough collateral to cover the renew cost.
         vm.expectRevert(abi.encodeWithSignature("Undercollateralized()"));

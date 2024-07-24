@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: UNLICENSED
-pragma solidity ^0.8.17;
+pragma solidity ^0.8.26;
 
 import {Script} from "../lib/forge-std/src/Script.sol";
 
@@ -11,7 +11,7 @@ import {
     IAlchemistV2,
     ICurveCalc,
     ICurvePool,
-    Ops,
+    Automate,
     SelfRepayingENS
 } from "../src/SelfRepayingENS.sol";
 
@@ -24,7 +24,7 @@ contract DeploySRENS is Script {
 
         // Deploy the contract.
         return deploy(
-            config.controller, config.registrar, config.gelatoOps, config.alchemist, config.alETHPool, config.curveCalc
+            config.controller, config.registrar, config.gelatoAutomate, config.alchemist, config.alETHPool, config.curveCalc
         );
     }
 
@@ -32,7 +32,7 @@ contract DeploySRENS is Script {
     function deploy(
         ETHRegistrarController controller,
         BaseRegistrarImplementation registrar,
-        Ops gelatoOps,
+        Automate gelatoAutomate,
         IAlchemistV2 alchemist,
         ICurvePool alETHPool,
         ICurveCalc curveCalc
@@ -42,7 +42,7 @@ contract DeploySRENS is Script {
         SelfRepayingENS srens = new SelfRepayingENS(
             controller,
             registrar,
-            gelatoOps,
+            gelatoAutomate,
             alchemist,
             alETHPool,
             curveCalc

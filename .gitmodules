@@ -1,12 +1,10 @@
 [submodule "lib/forge-std"]
 	path = lib/forge-std
 	url = https://github.com/foundry-rs/forge-std
+	branch = master
 [submodule "lib/ens-contracts"]
 	path = lib/ens-contracts
 	url = https://github.com/ensdomains/ens-contracts
-[submodule "lib/ops"]
-	path = lib/ops
-	url = https://github.com/gelatodigital/ops
 [submodule "lib/solmate"]
 	path = lib/solmate
 	url = https://github.com/transmissions11/solmate
@@ -14,10 +12,16 @@
 [submodule "lib/alchemix"]
 	path = lib/alchemix
 	url = https://github.com/alchemix-finance/v2-foundry
+	branch = master
 [submodule "lib/openzeppelin"]
 	path = lib/openzeppelin
 	url = https://github.com/OpenZeppelin/openzeppelin-contracts
-	branch = v4.8.1
+	branch = release-v5.0
 [submodule "lib/self-repaying-eth"]
 	path = lib/self-repaying-eth
 	url = https://github.com/The-Wary-One/self-repaying-eth
+	branch = main
+[submodule "lib/gelato"]
+	path = lib/gelato
+	url = https://github.com/gelatodigital/automate
+	branch = master

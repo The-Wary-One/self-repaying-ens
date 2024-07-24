@@ -7,8 +7,7 @@
       "04-curveCalc": "0xc1DB00a8E5Ef7bfa476395cdbcc98235477cDE4E",
       "05-controller": "0x283Af0B28c62C092C9727F1Ee09c02CA627EB7F5",
       "06-registrar": "0x57f1887a8BF19b14fC0dF6Fd9B2acc9Af147eA85",
-      "07-gelatoOps": "0xB3f5503f93d5Ef84b06993a1975B9D21B962892F",
-      "08-gelato": "0x3CACa7b48D0573D793d3b0279b5F0029180E83b6"
+      "07-gelatoAutomate": "0x2A6C106ae13B558BB9E2Ec64Bd2f1f7BEFF3A5E0"
     }
   }
 }

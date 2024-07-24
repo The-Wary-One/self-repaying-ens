@@ -1,4 +1,6 @@
 [profile.default]
+solc_version = "0.8.26"
+evm_version = "cancun"
 optimizer = false                  # Enable or disable the solc optimizer
 verbosity = 3                      # The verbosity of tests
 gas_reports = ["SelfRepayingENS"]
@@ -12,3 +14,4 @@ rpc_endpoints = { mainnet = "${RPC_MAINNET}" }
 [profile.production]
 optimizer = true
 optimizer_runs = 1_000_000
+via_ir = true

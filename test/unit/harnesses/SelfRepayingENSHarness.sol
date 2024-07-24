@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: UNLICENSED
-pragma solidity ^0.8.17;
+pragma solidity ^0.8.26;
 
 import "../../../src/SelfRepayingENS.sol";
 
@@ -8,11 +8,11 @@ contract SelfRepayingENSHarness is SelfRepayingENS {
     constructor(
         ETHRegistrarController _controller,
         BaseRegistrarImplementation _registrar,
-        Ops _gelatoOps,
+        Automate _gelatoAutomate,
         IAlchemistV2 _alchemist,
         ICurvePool _alETHPool,
         ICurveCalc _curveCalc
-    ) SelfRepayingENS(_controller, _registrar, _gelatoOps, _alchemist, _alETHPool, _curveCalc) {}
+    ) SelfRepayingENS(_controller, _registrar, _gelatoAutomate, _alchemist, _alETHPool, _curveCalc) {}
 
     /* --- EXPOSED INTERNAL FUNCTIONS --- */
 
