@@ -145,10 +145,12 @@ contract Toolbox is Script {
 
         // Get the first supported yield ETH token.
         address[] memory supportedTokens = config.alchemist.getSupportedYieldTokens();
+        // The tx can fail if the chosen token vault is full or disabled.
+        address chosenToken = supportedTokens[4];
         // Create an Alchemix account.
         vm.broadcast();
         config.wethGateway.depositUnderlying{value: 10 ether}(
-            address(config.alchemist), supportedTokens[0], 10 ether, msg.sender, 1
+            address(config.alchemist), chosenToken, 10 ether, msg.sender, 1
         );
     }
 

@@ -11,6 +11,7 @@ cast rpc anvil_impersonateAccount 0x9e2b6378ee8ad2A4A95Fe481d63CAba8FB0EBBF9 > /
 
 # Whitelist the last deployed AlETHRouter contract.
 cast send 0xA3dfCcbad1333DC69997Da28C961FF8B2879e653 \
+    --unlocked \
     --from 0x9e2b6378ee8ad2A4A95Fe481d63CAba8FB0EBBF9 \
     "add(address)" "$address"
 
