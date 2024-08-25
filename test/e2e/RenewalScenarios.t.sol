@@ -8,7 +8,7 @@ contract RenewalScenarioTests is TestBase {
     ///
     /// @dev **_NOTE:_** It is pretty difficult to perfectly test complex protocols locally when they rely on bots as they usually don't give integrators test mocks.
     /// @dev **_NOTE:_** In the following tests we won't care about Alchemix/Yearn bots and we manually simulate Gelato's.
-    function testFork_renewalScenario() external {
+    function testFork_renewalScenario_happyPath() external {
         // Act as scoopy, an EOA.
         vm.startPrank(scoopy, scoopy);
 

@@ -65,7 +65,7 @@ contract CheckerTests is TestBase {
 
 contract CheckerFailureTests is TestBase {
     /// @dev Test `srens.checker()`'s returns false when there is no name to renew.
-    function testFork_checker_failIfNoNameToRenew() external {
+    function testFork_checker_failIfNoNameToRenew() external view {
         (bool canExec, bytes memory execPayload) = srens.checker(scoopy);
         assertFalse(canExec, "checker should return false as there is no name to renew");
         assertEq(execPayload, bytes("no names to renew"), "checker should return false as there is no name to renew");

@@ -21,7 +21,7 @@ contract ToolboxLocal is Toolbox {
         pure
         returns (LibDataTypes.ModuleData memory moduleData)
     {
-        moduleData = LibDataTypes.ModuleData({modules: new LibDataTypes.Module[](1), args: new bytes[](1)});
+        moduleData = LibDataTypes.ModuleData({modules: new LibDataTypes.Module[](2), args: new bytes[](2)});
 
         moduleData.modules[0] = LibDataTypes.Module.RESOLVER;
         moduleData.modules[1] = LibDataTypes.Module.PROXY;
@@ -36,12 +36,7 @@ contract ToolboxLocal is Toolbox {
         Toolbox.Config memory config = getConfig();
 
         SelfRepayingENS srens = new SelfRepayingENS(
-            config.controller,
-            config.registrar,
-            config.gelatoAutomate,
-            config.alchemist,
-            config.alETHPool,
-            config.curveCalc
+            config.controller, config.registrar, config.gelatoAutomate, config.alchemist, config.alETHPool, config.weth
         );
 
         return srens;

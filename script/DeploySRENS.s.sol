@@ -9,8 +9,8 @@ import {
     BaseRegistrarImplementation,
     ETHRegistrarController,
     IAlchemistV2,
-    ICurveCalc,
-    ICurvePool,
+    ICurveStableSwapNG,
+    IWETH9,
     Automate,
     SelfRepayingENS
 } from "../src/SelfRepayingENS.sol";
@@ -24,7 +24,7 @@ contract DeploySRENS is Script {
 
         // Deploy the contract.
         return deploy(
-            config.controller, config.registrar, config.gelatoAutomate, config.alchemist, config.alETHPool, config.curveCalc
+            config.controller, config.registrar, config.gelatoAutomate, config.alchemist, config.alETHPool, config.weth
         );
     }
 
@@ -34,19 +34,12 @@ contract DeploySRENS is Script {
         BaseRegistrarImplementation registrar,
         Automate gelatoAutomate,
         IAlchemistV2 alchemist,
-        ICurvePool alETHPool,
-        ICurveCalc curveCalc
+        ICurveStableSwapNG alETHPool,
+        IWETH9 weth
     ) public returns (SelfRepayingENS) {
         // Deploy the SRENS contract.
         vmSafe.broadcast();
-        SelfRepayingENS srens = new SelfRepayingENS(
-            controller,
-            registrar,
-            gelatoAutomate,
-            alchemist,
-            alETHPool,
-            curveCalc
-        );
+        SelfRepayingENS srens = new SelfRepayingENS(controller, registrar, gelatoAutomate, alchemist, alETHPool, weth);
 
         return srens;
     }

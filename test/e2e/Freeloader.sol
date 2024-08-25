@@ -33,7 +33,7 @@ contract Freeloader {
         view
         returns (LibDataTypes.ModuleData memory moduleData)
     {
-        moduleData = LibDataTypes.ModuleData({modules: new LibDataTypes.Module[](1), args: new bytes[](1)});
+        moduleData = LibDataTypes.ModuleData({modules: new LibDataTypes.Module[](2), args: new bytes[](2)});
 
         moduleData.modules[0] = LibDataTypes.Module.RESOLVER;
         moduleData.modules[1] = LibDataTypes.Module.PROXY;

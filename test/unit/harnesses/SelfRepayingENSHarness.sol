@@ -10,9 +10,9 @@ contract SelfRepayingENSHarness is SelfRepayingENS {
         BaseRegistrarImplementation _registrar,
         Automate _gelatoAutomate,
         IAlchemistV2 _alchemist,
-        ICurvePool _alETHPool,
-        ICurveCalc _curveCalc
-    ) SelfRepayingENS(_controller, _registrar, _gelatoAutomate, _alchemist, _alETHPool, _curveCalc) {}
+        ICurveStableSwapNG _alETHPool,
+        IWETH9 _weth
+    ) SelfRepayingENS(_controller, _registrar, _gelatoAutomate, _alchemist, _alETHPool, _weth) {}
 
     /* --- EXPOSED INTERNAL FUNCTIONS --- */
 

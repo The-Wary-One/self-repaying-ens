@@ -41,10 +41,7 @@ contract AttackScenarioTests is TestBase {
         vm.warp(expiresAt + 1 days);
 
         // Deploy the Freeloader contract to use `scoopy`'s account to renew `otherName`.
-        Freeloader freeloader = new Freeloader(
-            srens,
-            config.gelatoAutomate
-        );
+        Freeloader freeloader = new Freeloader(srens, config.gelatoAutomate);
 
         freeloader.subscribe(otherName, scoopy);
         vm.stopPrank();
@@ -54,7 +51,7 @@ contract AttackScenarioTests is TestBase {
         LibDataTypes.ModuleData memory moduleData = freeloader._getModuleData(scoopy, otherName);
         vm.prank(config.gelatoAutomate.gelato());
         // It should not be possible !
-        vm.expectRevert("Ops.exec: NoErrorSelector");
+        vm.expectRevert("Automate.exec: OpsProxy.executeCall: NoErrorSelector");
         config.gelatoAutomate.exec(
             address(freeloader),
             address(srens),
@@ -62,7 +59,6 @@ contract AttackScenarioTests is TestBase {
             moduleData,
             gelatoFee,
             ETH,
-            false,
             true
         );
     }

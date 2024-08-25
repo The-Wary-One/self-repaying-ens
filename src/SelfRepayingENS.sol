@@ -11,8 +11,12 @@ import {
 import {Multicall} from "../lib/openzeppelin/contracts/utils/Multicall.sol";
 /* --- Gelato --- */
 import {Automate, LibDataTypes} from "../lib/gelato/contracts/Automate.sol";
-/* --- Self Repaying ENS --- */
-import {IAlchemistV2, ICurveCalc, ICurvePool, SelfRepayingETH} from "../lib/self-repaying-eth/src/SelfRepayingETH.sol";
+import {ProxyModule} from "../lib/gelato/contracts/taskModules/ProxyModule.sol";
+import {IOpsProxyFactory} from "../lib/gelato/contracts/interfaces/IOpsProxyFactory.sol";
+/* --- Self Repaying ETH --- */
+import {
+    IAlchemistV2, ICurveStableSwapNG, IWETH9, SelfRepayingETH
+} from "../lib/self-repaying-eth/src/SelfRepayingETH.sol";
 /* --- Solmate --- */
 import {toDaysWadUnsafe, wadDiv, wadExp} from "../lib/solmate/src/utils/SignedWadMath.sol";
 
@@ -38,6 +42,9 @@ contract SelfRepayingENS is SelfRepayingETH, Multicall {
 
     /// @notice The Gelato automate contract.
     Automate immutable gelatoAutomate;
+
+    /// @notice The Gelato dedicated caller.
+    address immutable gelatoDedicatedCaller;
 
     /// @notice The Gelato address for ETH.
     address constant ETH = 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE;
@@ -79,14 +86,17 @@ contract SelfRepayingENS is SelfRepayingETH, Multicall {
         BaseRegistrarImplementation _registrar,
         Automate _gelatoAutomate,
         IAlchemistV2 _alchemist,
-        ICurvePool _alETHPool,
-        ICurveCalc _curveCalc
-    ) payable SelfRepayingETH(_alchemist, _alETHPool, _curveCalc) {
+        ICurveStableSwapNG _alETHPool,
+        IWETH9 _weth
+    ) payable SelfRepayingETH(_alchemist, _alETHPool, _weth) {
         controller = _controller;
         registrar = _registrar;
         gelatoAutomate = _gelatoAutomate;
 
         gelato = _gelatoAutomate.gelato();
+        address proxyModuleAddress = _gelatoAutomate.taskModuleAddresses(LibDataTypes.Module.PROXY);
+        IOpsProxyFactory opsProxyFactory = ProxyModule(proxyModuleAddress).opsProxyFactory();
+        (gelatoDedicatedCaller,) = opsProxyFactory.getProxyOf(address(this));
     }
 
     /// @notice Subscribe to the self repaying ENS renewals service for `name`.
@@ -116,8 +126,9 @@ contract SelfRepayingENS is SelfRepayingETH, Multicall {
         // If `msg.sender` doesn't have a taskId it means it's their first time subscribing.
         if (_taskIds[msg.sender] == 0) {
             // We choose to pay Gelato when executing the task.
-            _taskIds[msg.sender] =
-                gelatoAutomate.createTask(address(this), abi.encode(this.renew.selector), _getModuleData(msg.sender), ETH);
+            _taskIds[msg.sender] = gelatoAutomate.createTask(
+                address(this), abi.encode(this.renew.selector), _getModuleData(msg.sender), ETH
+            );
         }
 
         // Add `name` to `subscriber`'s names to renew.
@@ -164,7 +175,7 @@ contract SelfRepayingENS is SelfRepayingETH, Multicall {
             uint256 highestLimit;
             string memory mostExpensiveNameToRenew;
 
-            // ⚠️ The loop is unbounded but we access each element from storage to avoid the in memory copy of the entire array.
+            // ⚠️  The loop is unbounded but we access each element from storage to avoid the in memory copy of the entire array.
             for (uint256 i; i < len; i++) {
                 string memory name = subNames.at(i);
                 // Try to limit the renew transaction gas price which means limiting the gelato fee.
@@ -202,7 +213,7 @@ contract SelfRepayingENS is SelfRepayingETH, Multicall {
 
             // Get `name` rent price.
             uint256 namePrice = controller.rentPrice(name, renewalDuration);
-            // Get the gelato fee in ETH.
+            // Get the gelato fee in ETH. If this function is called by someone else than Gelato, `gelatoFee` will equal 0.
             (uint256 gelatoFee,) = gelatoAutomate.getFeeDetails();
             // The amount of ETH needed to pay the ENS renewal using Gelato.
             uint256 neededETH = namePrice + gelatoFee;
@@ -213,9 +224,9 @@ contract SelfRepayingENS is SelfRepayingETH, Multicall {
             // Renew `name` for its expiry data + `renewalDuration` first.
             controller.renew{value: namePrice}(name, renewalDuration);
 
-            // Pay the Gelato executor with all the ETH left. No ETH will be stuck in this contract.
+            // Pay the Gelato contract with all the ETH left. No ETH will be stuck in this contract.
             // Do not pay Gelato if `renew()` was called by someone else.
-            if (msg.sender != address(gelatoAutomate)) return;
+            if (msg.sender != gelatoDedicatedCaller) return;
             (bool success,) = gelato.call{value: address(this).balance}("");
             if (!success) revert FailedTransfer();
         }

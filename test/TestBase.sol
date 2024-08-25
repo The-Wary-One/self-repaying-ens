@@ -5,6 +5,8 @@ import {Test} from "../lib/forge-std/src/Test.sol";
 
 import {WETHGateway} from "../lib/alchemix/src/WETHGateway.sol";
 import {Whitelist} from "../lib/alchemix/src/utils/Whitelist.sol";
+// TODO: This is ugly but it avoids some fake type error.
+import {IAlchemistV2State} from "../lib/self-repaying-eth/lib/alchemix/src/interfaces/alchemist/IAlchemistV2State.sol";
 
 import {Toolbox, ToolboxLocal} from "../script/ToolboxLocal.s.sol";
 
@@ -53,19 +55,15 @@ contract TestBase is Test {
         vm.label(scoopy, "scoopy");
         vm.deal(scoopy, 100 ether);
 
-        // Act as Scoopy, an EOA. Alchemix checks msg.sender === tx.origin to know if sender is an EOA.
-        vm.startPrank(scoopy, scoopy);
-
-        // Get the first supported yield ETH token.
-        address[] memory supportedTokens = config.alchemist.getSupportedYieldTokens();
-        // Create an Alchemix account.
-        config.wethGateway.depositUnderlying{value: 10 ether}(
-            address(config.alchemist), supportedTokens[0], 10 ether, scoopy, 1
-        );
+        // Create an Alchemix account with the first supported yield ETH token available.
+        _createAlchemixAccount(scoopy, 10 ether);
 
         // Check `name`'s rent price.
         uint256 registrationDuration = config.controller.MIN_REGISTRATION_DURATION();
         uint256 namePrice = config.controller.rentPrice(name, registrationDuration);
+
+        // Act as Scoopy, an EOA. Alchemix checks msg.sender === tx.origin to know if sender is an EOA.
+        vm.startPrank(scoopy, scoopy);
 
         // Register `name`.
         // To register a ENS name we must first send a commitment, wait some time then register it.
@@ -84,6 +82,22 @@ contract TestBase is Test {
         vm.stopPrank();
     }
 
+    /// @dev Create an Alchemix account with the first supported yield ETH token.
+    function _createAlchemixAccount(address target, uint256 value) internal {
+        address[] memory supportedTokens = config.alchemist.getSupportedYieldTokens();
+        address yieldToken = supportedTokens[0];
+
+        IAlchemistV2State.YieldTokenParams memory params = config.alchemist.getYieldTokenParameters(yieldToken);
+        assertTrue(params.enabled, "Should be enabled");
+        vm.prank(config.alchemist.admin());
+        config.alchemist.setMaximumExpectedValue(yieldToken, params.maximumExpectedValue + value);
+
+        // Act as `target`, an EOA. Alchemix checks msg.sender === tx.origin to know if sender is an EOA.
+        vm.prank(target, target);
+        // Create an Alchemix account with the first supported yield ETH token.
+        config.wethGateway.depositUnderlying{value: value}(address(config.alchemist), yieldToken, value, target, 1);
+    }
+
     /// @dev Simulate a Gelato IAutomate call with fees.
     function execRenewTask(uint256 fee, string memory _name, address subscriber) internal {
         LibDataTypes.ModuleData memory moduleData = toolbox.getModuleData(srens, subscriber);
@@ -93,14 +107,7 @@ contract TestBase is Test {
 
         // Execute the renew Gelato Task for `fee`.
         config.gelatoAutomate.exec(
-            address(srens),
-            address(srens),
-            abi.encodeCall(srens.renew, (_name, subscriber)),
-            moduleData,
-            fee,
-            ETH,
-            false,
-            true
+            address(srens), address(srens), abi.encodeCall(srens.renew, (_name, subscriber)), moduleData, fee, ETH, true
         );
     }
 }

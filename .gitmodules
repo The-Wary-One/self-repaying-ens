@@ -16,7 +16,7 @@
 [submodule "lib/openzeppelin"]
 	path = lib/openzeppelin
 	url = https://github.com/OpenZeppelin/openzeppelin-contracts
-	branch = release-v5.0
+	branch = release-v5.1
 [submodule "lib/self-repaying-eth"]
 	path = lib/self-repaying-eth
 	url = https://github.com/The-Wary-One/self-repaying-eth

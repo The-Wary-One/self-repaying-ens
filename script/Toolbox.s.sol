@@ -6,7 +6,9 @@ import {Script, stdJson} from "../lib/forge-std/src/Script.sol";
 import {Automate} from "../lib/gelato/contracts/Automate.sol";
 import {Whitelist} from "../lib/alchemix/src/utils/Whitelist.sol";
 import {WETHGateway} from "../lib/alchemix/src/WETHGateway.sol";
-import {IAlchemistV2, ICurveCalc, ICurvePool} from "../lib/self-repaying-eth/src/SelfRepayingETH.sol";
+import {
+    IAlchemistV2, ICurveStableSwapNG, IWETH9, SelfRepayingETH
+} from "../lib/self-repaying-eth/src/SelfRepayingETH.sol";
 
 import {BaseRegistrarImplementation, ETHRegistrarController, SelfRepayingENS} from "../src/SelfRepayingENS.sol";
 
@@ -17,8 +19,8 @@ contract Toolbox is Script {
     struct Config {
         IAlchemistV2 alchemist;
         WETHGateway wethGateway;
-        ICurvePool alETHPool;
-        ICurveCalc curveCalc;
+        ICurveStableSwapNG alETHPool;
+        IWETH9 weth;
         ETHRegistrarController controller;
         BaseRegistrarImplementation registrar;
         Automate gelatoAutomate;
