@@ -1,5 +1,5 @@
 [profile.default]
-solc_version = "0.8.26"
+solc_version = "0.8.27"
 evm_version = "cancun"
 optimizer = false                  # Enable or disable the solc optimizer
 verbosity = 3                      # The verbosity of tests
