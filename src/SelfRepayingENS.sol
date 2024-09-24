@@ -13,6 +13,7 @@ import {Multicall} from "../lib/openzeppelin/contracts/utils/Multicall.sol";
 import {Automate, LibDataTypes} from "../lib/gelato/contracts/Automate.sol";
 import {ProxyModule} from "../lib/gelato/contracts/taskModules/ProxyModule.sol";
 import {IOpsProxyFactory} from "../lib/gelato/contracts/interfaces/IOpsProxyFactory.sol";
+import {IGelato} from "../lib/gelato/contracts/integrations/Types.sol";
 /* --- Self Repaying ETH --- */
 import {
     IAlchemistV2, ICurveStableSwapNG, IWETH9, SelfRepayingETH
@@ -37,14 +38,14 @@ contract SelfRepayingENS is SelfRepayingETH, Multicall {
     /// @notice The ENS BaseRegistrarImplementation (i.e. .eth registrar) contract.
     BaseRegistrarImplementation immutable registrar;
 
-    /// @notice The Gelato contract.
-    address payable immutable gelato;
-
     /// @notice The Gelato automate contract.
     Automate immutable gelatoAutomate;
 
     /// @notice The Gelato dedicated caller.
     address immutable gelatoDedicatedCaller;
+
+    /// @notice The Gelato fee collector.
+    address payable immutable gelatoFeeCollector;
 
     /// @notice The Gelato address for ETH.
     address constant ETH = 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE;
@@ -93,7 +94,8 @@ contract SelfRepayingENS is SelfRepayingETH, Multicall {
         registrar = _registrar;
         gelatoAutomate = _gelatoAutomate;
 
-        gelato = _gelatoAutomate.gelato();
+        IGelato gelato = IGelato(_gelatoAutomate.gelato());
+        gelatoFeeCollector = payable(gelato.feeCollector());
         address proxyModuleAddress = _gelatoAutomate.taskModuleAddresses(LibDataTypes.Module.PROXY);
         IOpsProxyFactory opsProxyFactory = ProxyModule(proxyModuleAddress).opsProxyFactory();
         (gelatoDedicatedCaller,) = opsProxyFactory.getProxyOf(address(this));
@@ -227,7 +229,7 @@ contract SelfRepayingENS is SelfRepayingETH, Multicall {
             // Pay the Gelato contract with all the ETH left. No ETH will be stuck in this contract.
             // Do not pay Gelato if `renew()` was called by someone else.
             if (msg.sender != gelatoDedicatedCaller) return;
-            (bool success,) = gelato.call{value: address(this).balance}("");
+            (bool success,) = gelatoFeeCollector.call{value: address(this).balance}("");
             if (!success) revert FailedTransfer();
         }
     }

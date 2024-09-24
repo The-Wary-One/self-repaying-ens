@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.26;
 
+import {IGelato} from "../../lib/gelato/contracts/integrations/Types.sol";
+
 import {TestBase} from "../TestBase.sol";
 
 contract RenewalScenarioTests is TestBase {
@@ -43,7 +45,8 @@ contract RenewalScenarioTests is TestBase {
 
         (int256 previousDebt,) = config.alchemist.accounts(scoopy);
         uint256 namePrice = config.controller.rentPrice(name, 365 days);
-        uint256 previousGelatoBalance = config.gelatoAutomate.gelato().balance;
+        IGelato gelato = IGelato(config.gelatoAutomate.gelato());
+        uint256 previousGelatoBalance = gelato.feeCollector().balance;
 
         // Gelato now execute the defined task.
         // `srens` called by Gelato should renew `name` for `renewalDuration` for `namePrice` by minting some alETH debt.
@@ -54,7 +57,7 @@ contract RenewalScenarioTests is TestBase {
         (int256 newDebt,) = config.alchemist.accounts(scoopy);
         assertTrue(newDebt >= previousDebt + int256(namePrice + gelatoFee), "name renewal should increase scoopy debt");
 
-        uint256 newGelatoBalance = config.gelatoAutomate.gelato().balance;
+        uint256 newGelatoBalance = gelato.feeCollector().balance;
         assertTrue(newGelatoBalance == previousGelatoBalance + gelatoFee, "Gelato should have been paid");
     }
 

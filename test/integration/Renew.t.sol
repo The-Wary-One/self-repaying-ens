@@ -7,7 +7,7 @@ import {FixedPointMathLib} from "../../lib/solmate/src/utils/FixedPointMathLib.s
 
 import {TestBase} from "../TestBase.sol";
 
-import {SelfRepayingENS} from "../../src/SelfRepayingENS.sol";
+import {IGelato, SelfRepayingENS} from "../../src/SelfRepayingENS.sol";
 
 contract RenewTests is TestBase {
     bytes32 labelHash;
@@ -31,7 +31,8 @@ contract RenewTests is TestBase {
 
         (previousDebt,) = config.alchemist.accounts(scoopy);
         namePrice = config.controller.rentPrice(name, 365 days);
-        previousGelatoBalance = config.gelatoAutomate.gelato().balance;
+        IGelato gelato = IGelato(config.gelatoAutomate.gelato());
+        previousGelatoBalance = gelato.feeCollector().balance;
         // Wait for `name` to be in its renew period.
         vm.warp(expiresAt - 10 days);
         vm.stopPrank();
@@ -61,7 +62,8 @@ contract RenewTests is TestBase {
         (int256 newDebt,) = config.alchemist.accounts(scoopy);
         assertTrue(newDebt >= previousDebt + int256(namePrice + gelatoFee), "name renewal should increase scoopy debt");
 
-        uint256 newGelatoBalance = config.gelatoAutomate.gelato().balance;
+        IGelato gelato = IGelato(config.gelatoAutomate.gelato());
+        uint256 newGelatoBalance = gelato.feeCollector().balance;
         assertTrue(newGelatoBalance == previousGelatoBalance + gelatoFee, "Gelato should have been paid");
     }
 }
